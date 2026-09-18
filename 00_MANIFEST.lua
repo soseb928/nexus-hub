@@ -1,3 +1,3 @@
--- NexusPlay Hub v1.0.1
+-- NexusPlay Hub v1.0.2
 -- Core: https://raw.githubusercontent.com/soseb928/nexus-hub/refs/heads/main/NexusPlay_Hub.lua
 -- UI: https://raw.githubusercontent.com/soseb928/nexus-hub/refs/heads/main/NexusPlay_UI_Library.lua
