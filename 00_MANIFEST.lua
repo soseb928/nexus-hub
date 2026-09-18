@@ -1,7 +1,0 @@
--- NexusPlay Hub manifest
--- GitHub repository placeholder:
--- https://github.com/YOUR_USERNAME/NexusPlay-Hub
---
--- Raw files:
--- https://raw.githubusercontent.com/YOUR_USERNAME/NexusPlay-Hub/main/NexusPlay_UI_Library.lua
--- https://raw.githubusercontent.com/YOUR_USERNAME/NexusPlay-Hub/main/NexusPlay_Hub.lua
