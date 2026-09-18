@@ -17,8 +17,7 @@
 		})
 
 	This file contains the library ONLY - no example tabs are built, nothing is
-	shown until you call CreateWindow. See NexusPlayHub_Example.lua for a full demo
-	and NexusPlayHub_Commands.txt for every command.
+	shown until you call CreateWindow. The library contains only the UI implementation; the hub core supplies the tabs and controls.
 
 	STRUCTURE RULE:
 		WINDOW  holds TABS
@@ -5565,7 +5564,7 @@ end
 --=====================================================
 local NexusPlayHub = {}
 NexusPlayHub.Library = Library
-NexusPlayHub.Version = "1.0"
+NexusPlayHub.Version = "1.0.2"
 
 -- NexusPlayHub:CreateWindow({ ... }) builds the window and hands you the ui object.
 -- every option is optional.
