@@ -1,6 +1,6 @@
 --[[
     NexusPlay Hub
-    Version: 1.0.0
+    Version: 1.0.2
     Rebranded/refactored build.
 
     Notes:
@@ -11,8 +11,8 @@
 --]]
 local NEXUSPLAY_METADATA = {
     Name = "NexusPlay Hub",
-    Version = "1.0.0",
-    Build = "NEXUSPLAY-HUB-V1.0.0",
+    Version = "1.0.2",
+    Build = "NEXUSPLAY-HUB-V1.0.2",
 }
 
 
@@ -23,7 +23,7 @@ if NEXUSG.NexusPlayHub and NEXUSG.NexusPlayHub.stop then pcall(NEXUSG.NexusPlayH
 NEXUSG.NexusPlayHubSession = (NEXUSG.NexusPlayHubSession or 0) + 1
 local SESSION = NEXUSG.NexusPlayHubSession
 
-NEXUS_BUILD = "NEXUSPLAY-HUB-V1.0.0"
+NEXUS_BUILD = "NEXUSPLAY-HUB-V1.0.2"
 NEXUSG.NEXUS_BUILD = NEXUS_BUILD
 print("[NexusPlay Hub] build " .. NEXUS_BUILD .. " loaded (bring engine active)")
 
