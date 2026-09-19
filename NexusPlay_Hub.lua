@@ -13667,87 +13667,62 @@ do
     if not StatusTab then StatusTab = Window:CreateTab({ Name = "Status", Icon = "info", ImageSource = "Material" }) end
 
     -- ===== [NEXUSPLAY] Watcher NPC Teleport =====
-    local function NexusWatcherScore(obj)
-        local score = 0
-        local p = obj
-        for _ = 1, 8 do
-            if not p then break end
-            local n = string.lower(tostring(p.Name or ""))
-            if string.find(n, "yen estate", 1, true) then score = score + 100
-            elseif string.find(n, "yen", 1, true) or string.find(n, "estate", 1, true) then score = score + 25 end
-            if p:IsA("Model") then
-                if p.PrimaryPart then score = score + 10 end
-                if p:FindFirstChild("HumanoidRootPart") then score = score + 10 end
-            end
-            p = p.Parent
+    function NexusFindWatcher()
+        -- The game stores Watcher NPC spawn parts here:
+        -- Workspace.Map.Spawnpoints.NPCs.Watcher
+        local direct = workspace:FindFirstChild("Map")
+        direct = direct and direct:FindFirstChild("Spawnpoints")
+        direct = direct and direct:FindFirstChild("NPCs")
+        direct = direct and direct:FindFirstChild("Watcher")
+        if direct and direct:IsA("BasePart") then
+            return direct
         end
-        return score
+
+        -- Fallback for different map/load states.
+        local npcs = workspace:FindFirstChild("Map")
+        npcs = npcs and npcs:FindFirstChild("Spawnpoints")
+        npcs = npcs and npcs:FindFirstChild("NPCs")
+        if npcs then
+            local exact = npcs:FindFirstChild("Watcher")
+            if exact then return exact end
+            for _, obj in ipairs(npcs:GetChildren()) do
+                if obj:IsA("BasePart") and string.lower(obj.Name) == "watcher" then
+                    return obj
+                end
+            end
+        end
+
+        -- Last fallback: scan descendants for a Part named Watcher.
+        local ok, descendants = pcall(function() return workspace:GetDescendants() end)
+        if ok then
+            for _, obj in ipairs(descendants) do
+                if obj:IsA("BasePart") and string.lower(obj.Name) == "watcher" then
+                    return obj
+                end
+            end
+        end
+        return nil
     end
 
     function NexusWatcherPart(obj)
         if not obj then return nil end
         if obj:IsA("BasePart") then return obj end
         if obj:IsA("Model") then
-            return obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart")
+            return obj.PrimaryPart
+                or obj:FindFirstChild("HumanoidRootPart")
                 or obj:FindFirstChildWhichIsA("BasePart", true)
         end
         return obj:FindFirstChildWhichIsA("BasePart", true)
     end
 
-    function NexusFindWatcher()
-        local best, bestScore = nil, -math.huge
-        local ok, descendants = pcall(function() return workspace:GetDescendants() end)
-        if not ok then return nil end
-
-        -- First: real instances explicitly named "Watcher".
-        for _, obj in ipairs(descendants) do
-            if string.lower(tostring(obj.Name or "")) == "watcher" then
-                local part = NexusWatcherPart(obj)
-                if part then
-                    local score = NexusWatcherScore(obj) + 100
-                    if score > bestScore then best, bestScore = obj, score end
-                end
-            end
-        end
-
-        if best then return best end
-
-        -- Fallback: the NPC may use an internal name while its overhead/display
-        -- text says "Watcher". Find that text and walk up to its NPC model.
-        for _, obj in ipairs(descendants) do
-            local textValue
-            if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-                textValue = obj.Text
-            elseif obj:IsA("StringValue") then
-                textValue = obj.Value
-            end
-
-            if type(textValue) == "string"
-                and string.lower(textValue):match("^%s*watcher%s*$") then
-                local p = obj
-                for _ = 1, 10 do
-                    if not p then break end
-                    local part = NexusWatcherPart(p)
-                    if part then
-                        local score = NexusWatcherScore(p) + 50
-                        if score > bestScore then best, bestScore = p, score end
-                        break
-                    end
-                    p = p.Parent
-                end
-            end
-        end
-
-        return best
-    end
-
     function NexusTeleportToWatcher()
         local watcher = NexusFindWatcher()
-        if not watcher then
+        local part = NexusWatcherPart(watcher)
+        if not part then
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "Watcher NPC was not found. The game may use a display name instead of the NPC instance name.",
+                    Content = "Watcher NPC was not found at Workspace.Map.Spawnpoints.NPCs.",
                     Type = "Error",
                     Duration = 6,
                 })
@@ -13755,14 +13730,13 @@ do
             return false
         end
 
-        local part = NexusWatcherPart(watcher)
         local character = LocalPlayer and LocalPlayer.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
-        if not part or not root then
+        if not root then
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "Watcher or your character is not ready yet.",
+                    Content = "Your character is not ready yet.",
                     Type = "Error",
                     Duration = 5,
                 })
@@ -13770,7 +13744,7 @@ do
             return false
         end
 
-        local ok = pcall(function()
+        local ok, err = pcall(function()
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
             root.CFrame = part.CFrame + Vector3.new(0, 3, 0)
@@ -13780,13 +13754,22 @@ do
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "Teleported to Watcher (Yen Estate).",
+                    Content = "Teleported to Watcher.",
                     Type = "Success",
                     Duration = 4,
                 })
             end)
             return true
         end
+
+        pcall(function()
+            Library:Notify({
+                Title = "NEXUSPLAY HUB",
+                Content = "Teleport failed: " .. tostring(err),
+                Type = "Error",
+                Duration = 6,
+            })
+        end)
         return false
     end
 
@@ -13800,6 +13783,7 @@ do
         })
     end)
     -- ===== [/NEXUSPLAY] Watcher NPC Teleport =====
+
 
 
     SettingsTab = nil
