@@ -3997,8 +3997,7 @@ end
 
 bossHopBusy = false
 function bossServerHop()
-    if bossHopBusy then return end
-    bossHopBusy = true
+    if bossHopBusy then return end    bossHopBusy = true
     local TeleportService = game:GetService("TeleportService")
     local HttpService = game:GetService("HttpService")
     local placeId = game.PlaceId
@@ -7997,8 +7996,7 @@ task.spawn(function()
                 if NEXUS_LV.questBFtick % 2 == 0 then
                     enableBlackFlash()
                     NexusQ(pcall, blackFlashList, inRange, questMyModel, questMyHRP)
-                else
-                    NexusQ(pcall, attackList, inRange, questMyModel, questMyHRP)
+                else                    NexusQ(pcall, attackList, inRange, questMyModel, questMyHRP)
                 end
             end
         end
@@ -11997,8 +11995,7 @@ task.spawn(function()
                     yukiReadyAt = os.clock()
                     yukiPhase = "ready"
                     sorcClickReady()
-                end
-                local main, mstates = yukiMainModel()
+                end                local main, mstates = yukiMainModel()
                 if main then
                     yukiSawMain = true
                     if sorcImmuneOf(mstates) then
@@ -13669,6 +13666,113 @@ do
     pcall(function() SettingsTab = Window:CreateTab({ Name = "Settings", Icon = nexusTabIcon("Settings", "person"), ImageSource = "Material" }) end)
     if not SettingsTab then SettingsTab = Window:CreateTab({ Name = "Settings", Icon = "person", ImageSource = "Material" }) end
 
+
+    -- ===== [NEXUSPLAY] Watcher NPC Teleport =====
+    function NexusFindWatcher()
+        local best, bestScore = nil, -math.huge
+        local ok, descendants = pcall(function() return workspace:GetDescendants() end)
+        if not ok or type(descendants) ~= "table" then return nil end
+
+        for _, obj in ipairs(descendants) do
+            if obj.Name == "Watcher" then
+                local score = 0
+                local p = obj.Parent
+                for _ = 1, 5 do
+                    if not p then break end
+                    local n = string.lower(p.Name or "")
+                    if string.find(n, "yen estate", 1, true) then
+                        score = score + 100
+                    elseif string.find(n, "yen", 1, true) or string.find(n, "estate", 1, true) then
+                        score = score + 25
+                    end
+                    p = p.Parent
+                end
+                if obj:IsA("Model") then
+                    if obj.PrimaryPart then score = score + 10 end
+                    if obj:FindFirstChild("HumanoidRootPart") then score = score + 10 end
+                elseif obj:IsA("BasePart") then
+                    score = score + 5
+                end
+                if score > bestScore then
+                    best, bestScore = obj, score
+                end
+            end
+        end
+        return best
+    end
+
+    function NexusWatcherPart(obj)
+        if not obj then return nil end
+        if obj:IsA("BasePart") then return obj end
+        if obj:IsA("Model") then
+            return obj.PrimaryPart
+                or obj:FindFirstChild("HumanoidRootPart")
+                or obj:FindFirstChildWhichIsA("BasePart", true)
+        end
+        return obj:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    function NexusTeleportToWatcher()
+        local watcher = NexusFindWatcher()
+        if not watcher then
+            pcall(function()
+                Library:Notify({
+                    Title = "NEXUSPLAY HUB",
+                    Content = "Watcher NPC tidak ditemukan di workspace.",
+                    Type = "Error",
+                    Duration = 5,
+                })
+            end)
+            return false
+        end
+
+        local part = NexusWatcherPart(watcher)
+        local character = LocalPlayer and LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not part or not root then
+            pcall(function()
+                Library:Notify({
+                    Title = "NEXUSPLAY HUB",
+                    Content = "Watcher atau karakter player belum siap.",
+                    Type = "Error",
+                    Duration = 5,
+                })
+            end)
+            return false
+        end
+
+        local target = part.CFrame + Vector3.new(0, 3, 0)
+        local ok = pcall(function()
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = target
+        end)
+
+        if ok then
+            pcall(function()
+                Library:Notify({
+                    Title = "NEXUSPLAY HUB",
+                    Content = "Teleported to Watcher (Yen Estate).",
+                    Type = "Success",
+                    Duration = 4,
+                })
+            end)
+            return true
+        end
+        return false
+    end
+
+    pcall(function()
+        local watcherSection = StatusTab:CreateSection("NPC Teleport", "Teleport langsung ke NPC penting")
+        watcherSection:CreateButton({
+            Name = "Teleport to Watcher",
+            Callback = function()
+                NexusTeleportToWatcher()
+            end,
+        })
+    end)
+    -- ===== [/NEXUSPLAY] Watcher NPC Teleport =====
+
     CombatTab:CreateSection("Basic Combat")
     PT(CombatTab, "FastOn", "Auto Attack", function(on) FastOn = on end)
 
@@ -14997,8 +15101,7 @@ end }
                 if infos[1].Username and infos[1].Username ~= "" then REAL_NAME = infos[1].Username end
                 if infos[1].DisplayName and infos[1].DisplayName ~= "" then REAL_DISPLAY = infos[1].DisplayName end
             end
-            pcall(function() LP.Name = REAL_NAME end)
-            pcall(function() LP.DisplayName = REAL_DISPLAY end)
+            pcall(function() LP.Name = REAL_NAME end)            pcall(function() LP.DisplayName = REAL_DISPLAY end)
         end
 
         local PROTECT_TEXT = tostring(S("NXAV_Text", "Protected by Nexus") or "")
@@ -17998,588 +18101,3 @@ end }
     StatusTab:CreateInput({
         Name = "Position (X, Y, Z)",
         CurrentValue = NexusTpBoxText,
-        PlaceholderText = "1347.7, 677.09, 410.25",
-        RemoveTextAfterFocusLost = false,
-        MaxCharacters = 80,
-        Callback = function(text)
-            NexusTpBoxText = tostring(text or "")
-            Settings["NexusTpBoxText"] = NexusTpBoxText
-            saveSettings()
-        end,
-    }, "NEXUS_NexusTpBoxText")
-
-    StatusTab:CreateButton({ Name = "Tp to Position", Callback = function()
-        local x, y, z = NexusParsePos(NexusTpBoxText)
-        if not x then
-            pcall(function() Library:Notify({ Title = "NEXUSPLAY HUB", Content = "Type a position like 1347.7, 677.09, 410.25", Type = "Error", Duration = 3 }) end)
-            return
-        end
-        task.spawn(function()
-            local ok = false
-            pcall(function() ok = nexusTpTo(Vector3.new(x, y, z)) end)
-            if ok then
-                pcall(function() Library:Notify({ Title = "NEXUSPLAY HUB", Content = "Teleported to " .. x .. ", " .. y .. ", " .. z, Type = "Success", Duration = 3 }) end)
-            else
-                pcall(function() Library:Notify({ Title = "NEXUSPLAY HUB", Content = "Character not loaded", Type = "Error", Duration = 3 }) end)
-            end
-        end)
-    end })
-
-    StatusTab:CreateSection("Teleport to Part / Model")
-
-    NexusTpPartText = tostring(S("NexusTpPartText", "") or "")
-    NexusTpPartList, NexusTpPartKey, NexusTpPartIdx = {}, "", 0
-
-    function NexusPosOfObject(obj)
-        return NexusObjPos(obj)
-    end
-
-    function NexusCollectObjects(name)
-        local exact, loose = {}, {}
-        local low = string.lower(name)
-
-        local lowMemo = {}
-        pcall(function()
-            for _, d in ipairs(wsDesc()) do
-                local nm = d.Name
-                if nm == name then
-                    if NexusPosOfObject(d) then exact[#exact + 1] = d end
-                else
-                    local l = lowMemo[nm]
-                    if l == nil then l = string.lower(nm) lowMemo[nm] = l end
-                    if string.find(l, low, 1, true) and NexusPosOfObject(d) then
-                        loose[#loose + 1] = d
-                    end
-                end
-            end
-        end)
-        local list = (#exact > 0) and exact or loose
-        pcall(function()
-            table.sort(list, function(a, b)
-                local pa, pb = NexusPosOfObject(a), NexusPosOfObject(b)
-                if not pa or not pb then return false end
-                if pa.X ~= pb.X then return pa.X < pb.X end
-                if pa.Y ~= pb.Y then return pa.Y < pb.Y end
-                return pa.Z < pb.Z
-            end)
-        end)
-        return list
-    end
-
-    StatusTab:CreateInput({
-        Name = "Part / Model Name",
-        CurrentValue = NexusTpPartText,
-        PlaceholderText = "FogSealedGate",
-        RemoveTextAfterFocusLost = false,
-        MaxCharacters = 80,
-        Callback = function(text)
-            NexusTpPartText = tostring(text or "")
-            NexusTpPartList, NexusTpPartKey, NexusTpPartIdx = {}, "", 0
-            Settings["NexusTpPartText"] = NexusTpPartText
-            saveSettings()
-        end,
-    }, "NEXUS_NexusTpPartText")
-
-    StatusTab:CreateButton({ Name = "Tp to Part / Model", Callback = function()
-        task.spawn(function()
-            local name = tostring(NexusTpPartText or ""):match("^%s*(.-)%s*$") or ""
-            if name == "" then
-                pcall(function() Library:Notify({ Title = "NEXUSPLAY HUB", Content = "Type a part or model name first", Type = "Error", Duration = 3 }) end)
-                return
-            end
-
-            local stale = (NexusTpPartKey ~= name) or (#NexusTpPartList == 0)
-            if not stale then
-                for _, o in ipairs(NexusTpPartList) do
-                    if not (o and o.Parent) then stale = true break end
-                end
-            end
-            if stale then
-                NexusTpPartList = NexusCollectObjects(name)
-                NexusTpPartKey  = name
-                NexusTpPartIdx  = 0
-            end
-            local total = #NexusTpPartList
-            if total == 0 then
-                pcall(function() Library:Notify({ Title = "NEXUSPLAY HUB", Content = "No part or model named \"" .. name .. "\" found", Type = "Error", Duration = 3 }) end)
-                return
-            end
-
-            NexusTpPartIdx = (NexusTpPartIdx % total) + 1
-            local obj = NexusTpPartList[NexusTpPartIdx]
-            local pos = NexusPosOfObject(obj)
-            if not pos then
-                NexusTpPartList = {}
-                pcall(function() Library:Notify({ Title = "NEXUSPLAY HUB", Content = "That one despawned, press Tp again", Type = "Error", Duration = 3 }) end)
-                return
-            end
-            local ok = false
-            pcall(function() ok = nexusTpTo(pos + Vector3.new(0, 3, 0)) end)
-            if ok then
-                pcall(function() Library:Notify({
-                    Title = "NEXUSPLAY HUB",
-                    Content = obj.Name .. "  (" .. NexusTpPartIdx .. "/" .. total .. ")",
-                    Type = "Success", Duration = 3,
-                }) end)
-            else
-                pcall(function() Library:Notify({ Title = "NEXUSPLAY HUB", Content = "Character not loaded", Type = "Error", Duration = 3 }) end)
-            end
-        end)
-    end })
-
-    task.spawn(function()
-        local lastPos = nil
-        while NEXUSG.NexusPlayHubSession == SESSION do
-            local x, y, z, real = NexusMyPos()
-            local ptxt
-            if x then
-                ptxt = "X: " .. x .. "   Y: " .. y .. "   Z: " .. z .. (real and "" or "   (camera)")
-            else
-                ptxt = "X: -   Y: -   Z: -   (waiting for character)"
-            end
-            if ptxt ~= lastPos then
-                lastPos = ptxt
-                pcall(function() PosLabel:Set(ptxt) end)
-            end
-            task.wait(0.25)
-        end
-    end)
-
-    task.spawn(function()
-        while NEXUSG.NexusPlayHubSession == SESSION do
-
-            local parts = {}
-            if FastOn then table.insert(parts, "Attack") end
-            if NEXUS_LV.KillOn then table.insert(parts, "Aura") end
-            if NEXUS_LV.BringOn then table.insert(parts, "Bring") end
-            if NEXUS_LV.BringAllOn then table.insert(parts, "BringAll") end
-            if NEXUS_LV.ReachOn then table.insert(parts, "Reach") end
-            if QuestOn then table.insert(parts, "Quest") end
-            if AutoKillBossOn then table.insert(parts, "KillBoss(" .. tostring(selectedBoss) .. ")") end
-            if FindBossHopOn then table.insert(parts, "FindBoss") end
-            if NEXUS_LV.FastQuestOn then table.insert(parts, "FastQ") end
-            if BringQuestOn then table.insert(parts, "BringQ") end
-            if BlackFlashOn then table.insert(parts, "BF") end
-            if NEXUS_LV.BlackFlash2On then table.insert(parts, "BF2") end
-            if NEXUS_LV.BlackFlash3On then table.insert(parts, "BF3") end
-            if NEXUS_LV.PlungeOn then table.insert(parts, "Plunge") end
-            if NEXUS_LV.FugaOn then table.insert(parts, "Fuga") end
-            if NEXUS_LV.DismantleOn then table.insert(parts, "Dismantle") end
-            if NEXUS_LV.WebSlamOn then table.insert(parts, "WebSlam") end
-            if NEXUS_LV.CleaveOn then table.insert(parts, "Cleave") end
-            if NEXUS_LV.SukunaOn then table.insert(parts, "Sukuna") end
-            if NEXUS_LV.HakariOn then table.insert(parts, "Hakari") end
-            if NEXUS_LV.LimitlessOn then table.insert(parts, "Limitless") end
-            if NEXUS_LV.AwkLimitlessOn then table.insert(parts, "AwkLimitless") end
-            if NEXUS_LV.FastInfAuraOn then table.insert(parts, "InfAura") end
-            if NexusSMOn then table.insert(parts, "SukunaMark") end
-            if NexusSWSMOn then table.insert(parts, "SW-SM") end
-            if NexusSWFillOn then table.insert(parts, "SM-Fill") end
-            if CopyOn then table.insert(parts, "Copy") end
-            if BloodOn then table.insert(parts, "Blood") end
-            if StarRageOn then table.insert(parts, "StarRage") end
-            if BeastAmberOn then table.insert(parts, "Beast") end
-            if NEXUS_LV.ProjectionOn then table.insert(parts, "Projection") end
-            if NEXUS_LV.LarpOn then table.insert(parts, "Larp") end
-            if NEXUS_LV.JudgemanOn then table.insert(parts, "Judgeman") end
-            if TenShadowsOn then table.insert(parts, "TenShadows") end
-            if AutoGojoOn then table.insert(parts, "Gojo") end
-            if BringGojoOn then table.insert(parts, "BringGojo") end
-            if StarQ1On then table.insert(parts, "Star1") end
-            if StarQ2On then table.insert(parts, "Star2") end
-            if StarQ3On then table.insert(parts, "Star3") end
-            if StarQ4On then table.insert(parts, "Star4") end
-            if StarQ5On then table.insert(parts, "Star5") end
-            if StarBossOn then table.insert(parts, "LunaticCultist") end
-            if NEXUS_LV.QuickShapeOn then table.insert(parts, "QuickShape") end
-            if AutoSlot1On then table.insert(parts, "Slot1") end
-            if AutoSlot2On then table.insert(parts, "Slot2") end
-            if NEXUS_LV.AutoChestOn then table.insert(parts, "Chest") end
-            if NEXUS_LV.AutoRaidOn then table.insert(parts, "Raid") end
-            if AutoBloodRaidOn then table.insert(parts, "BloodRaid") end
-            if AutoLightningRaidOn then table.insert(parts, "LightningRaid") end
-            if AutoOuterRaidOn then table.insert(parts, "OuterRaid") end
-            if AutoYutaRaidOn then table.insert(parts, "YutaRaid") end
-            if RaidCfg.active.Judge then table.insert(parts, "JudgeRaid") end
-            if RaidCfg.active.Jogo then table.insert(parts, "JogoRaid") end
-            if RaidCfg.active.Toji then table.insert(parts, "TojiRaid") end
-            if RaidCfg.active.Sukuna then table.insert(parts, "SukunaRaid") end
-            if RaidCfg.active.AToji then table.insert(parts, "ATojiRaid") end
-            if RaidCfg.active.Maki then table.insert(parts, "MakiRaid") end
-            if RaidCfg.active.AGojo then table.insert(parts, "AGojoRaid") end
-            if AutoCurseCalamityOn then table.insert(parts, "CurseCalamityRaid") end
-            if BringRaidNpcOn then table.insert(parts, "BringRaidNPC(" .. tostring(RAID_BRING_RANGE) .. ")") end
-            if TrialOn then table.insert(parts, "Trial[C" .. tostring(TrialChamber) .. " " .. tostring(TrialRuns) .. "/" .. tostring(TrialRestarts) .. (TrialNextOn and " next" or "") .. " " .. tostring(TrialPhase) .. "]") end
-            if flying then table.insert(parts, "Fly") end
-            if AntiAfkOn then table.insert(parts, "AntiAFK[" .. tostring(NEXUS_AfkNudges) .. "/" .. tostring(NEXUS_AfkMethod) .. "]") end
-            if AntiTpOn then table.insert(parts, "AntiTP") end
-            if #parts == 0 then
-
-                pcall(function() StatusLabel:Set("Active: OFF   |   Targets: 0") end)
-                task.wait(2)
-            else
-                local t = select(1, NEXUS_LV.collectTargets())
-                pcall(function() StatusLabel:Set("Active: " .. table.concat(parts, "+") .. "   |   Targets: " .. #t) end)
-                task.wait(0.5)
-            end
-        end
-    end)
-
-    pcall(function()
-        Library:Notify({ Title = "NEXUSPLAY HUB", Content = "Loaded successfully!", Type = "Success", Duration = 4 })
-    end)
-end
-
-task.spawn(function()
-    while NEXUSG.NexusPlayHubSession == SESSION do
-        local farming = QuestOn or BringQuestOn or AutoGojoOn or BringGojoOn
-            or (NexusRctAnyOn and NexusRctAnyOn()) or (NexusStarQuestOn and NexusStarQuestOn())
-            or (NexusHRAnyOn and NexusHRAnyOn()) or (NexusKMAnyOn and NexusKMAnyOn())
-        if farming and NexusCapPoint() then
-            local cur = getModel()
-            local chrp = cur and cur:FindFirstChild("HumanoidRootPart")
-            if chrp then NexusCapKeepInside(chrp, NEXUS_CAP_LEASH) end
-            task.wait(NEXUS_CAP_TICK)
-        else
-            task.wait(NEXUS_IDLE)
-        end
-    end
-end)
-
-NEXUS_STALE_GAP = 12
-NEXUS_STALE_TICK = 3
-NexusStaleT = {}
-NexusStaleWarn = {}
-
-function NexusCapAreaExists(capId)
-    if not capId then return false end
-    local found = false
-    pcall(function()
-        found = workspace.Container.QuestAreas.Capture:FindFirstChild(tostring(capId)) ~= nil
-    end)
-    return found
-end
-
-function NexusCapStaleFix(id)
-    if not id or id == "" then return nil end
-    local m = NexusQuestMods()
-    if not m or not m.ok then return nil end
-    local cfg = m.QCfg and m.QCfg.Quests and m.QCfg.Quests[id]
-    if not cfg or cfg.Type ~= "Capture" then return nil end
-    local saved
-    pcall(function() saved = m.QC:GetSavedQuest(id) end)
-    if not saved or saved.IsFinished then return nil end
-    local capId = saved.CaptureID
-    if not capId or NexusCapAreaExists(capId) then
-        NexusStaleWarn[id] = nil
-        return "ok"
-    end
-    local pts = tonumber(saved.Points) or 0
-    if pts > 0 then
-
-        if not NexusStaleWarn[id] then
-            NexusStaleWarn[id] = true
-            pcall(function()
-                Library:Notify({ Title = "NEXUSPLAY HUB", Type = "Error", Duration = 9,
-                    Content = id .. " was started on a different server, so its quest area does not "
-                        .. "exist here and the " .. tostring(pts) .. " points cannot go up. Rejoin that "
-                        .. "server, or cancel the quest to restart it here." })
-            end)
-        end
-        return "locked"
-    end
-    local now = os.clock()
-    if (now - (NexusStaleT[id] or -1)) < NEXUS_STALE_GAP then return "reset" end
-    NexusStaleT[id] = now
-    if not NexusQuestCancel then
-        pcall(function() NexusQuestCancel = Net.QuestService.CancelQuest_Method end)
-    end
-    if NexusQuestCancel then pcall(function() NexusQuestCancel:InvokeServer(id) end) end
-    task.wait(1)
-    NexusAccT[id] = nil
-    NexusSafeAccept(id)
-    task.wait(1)
-    local s2
-    pcall(function() s2 = m.QC:GetSavedQuest(id) end)
-    local fixed = s2 and NexusCapAreaExists(s2.CaptureID)
-    pcall(function()
-        Library:Notify({ Title = "NEXUSPLAY HUB", Type = fixed and "Success" or "Info", Duration = 6,
-            Content = fixed
-                and (id .. ": quest area was from another server, so it was re-issued here. Farming now.")
-                or (id .. ": quest area missing on this server, retrying...") })
-    end)
-    return "reset"
-end
-
-task.spawn(function()
-    while NEXUSG.NexusPlayHubSession == SESSION do
-        local farming = QuestOn or BringQuestOn or AutoGojoOn or BringGojoOn
-            or (NexusRctAnyOn and NexusRctAnyOn()) or (NexusStarQuestOn and NexusStarQuestOn())
-            or (NexusHRAnyOn and NexusHRAnyOn()) or (NexusKMAnyOn and NexusKMAnyOn())
-        if not farming then
-            task.wait(NEXUS_IDLE)
-        else
-            local m = NexusQuestMods()
-            local seen, ids = {}, {}
-            local function push(v) if v and v ~= "" and not seen[v] then seen[v] = true ids[#ids + 1] = v end end
-            if m and m.ok then
-                local act
-                pcall(function() act = m.QC:GetActiveQuest() end)
-                push(act)
-            end
-            if NexusHRQuestId then pcall(function() push(NexusHRQuestId()) end) end
-            if NexusKMQuestId then pcall(function() push(NexusKMQuestId()) end) end
-            if NexusRctQuestId then pcall(function() push(NexusRctQuestId()) end) end
-            if currentQuestId then pcall(function() push(currentQuestId()) end) end
-            for i = 1, #ids do pcall(NexusCapStaleFix, ids[i]) end
-            task.wait(NEXUS_STALE_TICK)
-        end
-    end
-end)
-
-NEXUS_ROAM_SPEED = 55
-NEXUS_ROAM_TURN  = 1.15
-NEXUS_ROAM_NEAR  = 5
-NEXUS_ROAM_SWEEP = 0.55
-NEXUS_ROAM_CLAMP = 0.70
-NEXUS_ROAM_SNAP  = 250
-NEXUS_ROAM_PICK  = 0.35
-NexusRoamAngle = 0
-
-function NexusCapClamp(p, center, rad)
-    local d = p - center
-    local flat = Vector3.new(d.X, 0, d.Z)
-    local lim = rad * NEXUS_ROAM_CLAMP
-    if flat.Magnitude > lim and flat.Magnitude > 0 then
-        flat = flat.Unit * lim
-    end
-    local ylim = rad * 0.35
-    local y = math.clamp(p.Y, center.Y - ylim, center.Y + ylim)
-    return Vector3.new(center.X + flat.X, y, center.Z + flat.Z)
-end
-
-task.spawn(function()
-    local nextPick, best = 0, nil
-    while NEXUSG.NexusPlayHubSession == SESSION do
-        local farming = QuestOn or BringQuestOn or AutoGojoOn or BringGojoOn
-            or (NexusRctAnyOn and NexusRctAnyOn()) or (NexusStarQuestOn and NexusStarQuestOn())
-            or (NexusHRAnyOn and NexusHRAnyOn()) or (NexusKMAnyOn and NexusKMAnyOn())
-        local center, rad = NexusCapPoint()
-        if not (farming and center and NexusCapRoamOn) then
-            if NexusCapPhase == "roam" then NexusCapPhase = "hold" end
-            best = nil
-            task.wait(NEXUS_IDLE)
-        else
-            local cur = getModel()
-            local chrp = cur and cur:FindFirstChild("HumanoidRootPart")
-            if not chrp then
-                best = nil
-                task.wait(NEXUS_IDLE)
-            else
-                NexusCapPhase = "roam"
-                local now = os.clock()
-                if now >= nextPick then
-                    nextPick = now + NEXUS_ROAM_PICK
-
-                    pcall(NexusAIBring, chrp.Position)
-                    best = nil
-                    local bd = math.huge
-                    local list = NexusAIQuestList()
-                    for i = 1, #list do
-                        local pp = list[i].pp
-                        if pp and pp.Parent then
-                            local dc = pp.Position - center
-                            if Vector3.new(dc.X, 0, dc.Z).Magnitude <= rad and math.abs(dc.Y) <= rad then
-                                local d = (pp.Position - chrp.Position).Magnitude
-                                if d < bd then bd, best = d, pp end
-                            end
-                        end
-                    end
-                end
-
-                local dt = RunService.Heartbeat:Wait() or 0.016
-                if dt > 0.2 then dt = 0.2 end
-                NexusRoamAngle = (NexusRoamAngle + NEXUS_ROAM_TURN * dt) % (math.pi * 2)
-
-                local target
-                if best and best.Parent then
-
-                    local mp = best.Position
-                    local b = chrp.Position - mp
-                    b = Vector3.new(b.X, 0, b.Z)
-                    local bearing = (b.Magnitude > 0.1) and math.atan2(b.Z, b.X) or NexusRoamAngle
-                    bearing = bearing + NEXUS_ROAM_TURN * dt
-                    target = Vector3.new(
-                        mp.X + math.cos(bearing) * NEXUS_ROAM_NEAR,
-                        mp.Y + 2,
-                        mp.Z + math.sin(bearing) * NEXUS_ROAM_NEAR
-                    )
-                else
-
-                    target = Vector3.new(
-                        center.X + math.cos(NexusRoamAngle) * rad * NEXUS_ROAM_SWEEP,
-                        center.Y + 3,
-                        center.Z + math.sin(NexusRoamAngle) * rad * NEXUS_ROAM_SWEEP
-                    )
-                end
-                target = NexusCapClamp(target, center, rad)
-
-                local p = chrp.Position
-                local d = target - p
-                local flat = Vector3.new(d.X, 0, d.Z)
-                local dist = flat.Magnitude
-                local step = flat
-                if dist > NEXUS_ROAM_SNAP then
-                    step = flat
-                elseif dist > NEXUS_ROAM_SPEED * dt then
-                    step = flat.Unit * (NEXUS_ROAM_SPEED * dt)
-                end
-                local np = p + step
-                np = Vector3.new(np.X, p.Y + (target.Y - p.Y) * math.min(1, dt * 6), np.Z)
-                pcall(function()
-                    chrp.AssemblyLinearVelocity = Vector3.zero
-                    chrp.AssemblyAngularVelocity = Vector3.zero
-                    if dist > 0.6 then
-                        local dir = flat.Unit
-                        chrp.CFrame = CFrame.new(np, Vector3.new(np.X + dir.X, np.Y, np.Z + dir.Z))
-                    else
-                        chrp.CFrame = CFrame.new(np)
-                    end
-                end)
-            end
-        end
-    end
-end)
-
-NEXUS_CAP_NODE_WAIT = 1.8
-NEXUS_CAP_HAUL_WAIT = 0.6
-NEXUS_CAP_NODE_HOP  = 3
-NexusCapPhase = "idle"
-NexusCapRoamOn = true
-NexusCapGatherOn = false
-
-NexusCapM = NexusCapM or { t = -1, n = 0 }
-NexusCapN = NexusCapN or { key = nil, list = nil, i = 1, miss = 0 }
-
-function NexusCapMobs()
-    local c, now = NexusCapM, os.clock()
-    if (now - c.t) < 0.3 then return c.n end
-    c.t, c.n = now, 0
-    local cap = NexusCapInfo()
-    if not cap.on or not cap.names or #cap.names == 0 then return 0 end
-    local CF = workspace.Characters and workspace.Characters:FindFirstChild("Client")
-    if not CF then return 0 end
-    local nms, nn, n = cap.names, #cap.names, 0
-    for _, d in ipairs(clientLabels(CF)) do
-        if d.ClassName == "TextLabel" then
-            local lt = string.lower(d.Text)
-            for i = 1, nn do
-                if string.find(lt, nms[i], 1, true) then n = n + 1 break end
-            end
-        end
-    end
-    c.n = n
-    return n
-end
-
-function NexusCapNodes()
-    local cap = NexusCapInfo()
-    if not cap.on or not cap.pos then return nil end
-    local st, key = NexusCapN, tostring(cap.id)
-    if st.key == key and st.list and #st.list > 0 then return st.list end
-    local qs
-    pcall(function() qs = workspace.Map.Spawnpoints.QuestSpawnpoints end)
-    if not qs then return nil end
-    local list = {}
-    for _, c in ipairs(qs:GetChildren()) do
-        if c:IsA("BasePart") then
-            local v = c.Position - cap.pos
-            list[#list + 1] = { p = c.Position, d = Vector3.new(v.X, 0, v.Z).Magnitude }
-        end
-    end
-    table.sort(list, function(a, b) return a.d < b.d end)
-    st.key, st.list, st.i, st.miss = key, list, 1, 0
-    if #list == 0 then return nil end
-    return list
-end
-
-task.spawn(function()
-    while NEXUSG.NexusPlayHubSession == SESSION do
-        local farming = QuestOn or BringQuestOn or AutoGojoOn or BringGojoOn
-            or (NexusRctAnyOn and NexusRctAnyOn()) or (NexusStarQuestOn and NexusStarQuestOn())
-            or (NexusHRAnyOn and NexusHRAnyOn()) or (NexusKMAnyOn and NexusKMAnyOn())
-        local capPos, capRad = NexusCapPoint()
-        if not (farming and capPos and NexusCapGatherOn) then
-            NexusCapPhase = "idle"
-            task.wait(NEXUS_IDLE)
-        elseif NexusCapMobs() > 0 then
-
-            NexusCapPhase = "hold"
-            NexusCapN.miss = 0
-            task.wait(0.4)
-        else
-
-            local nodes = NexusCapNodes()
-            if not nodes then
-                NexusCapPhase = "hold"
-                task.wait(NEXUS_IDLE)
-            else
-                NexusCapPhase = "gather"
-                local st = NexusCapN
-                if st.i > #nodes then st.i = 1 end
-                local node = nodes[st.i]
-                local cur = getModel()
-                local chrp = cur and cur:FindFirstChild("HumanoidRootPart")
-                if chrp and node then
-                    pcall(function()
-                        chrp.AssemblyLinearVelocity = Vector3.zero
-                        chrp.CFrame = CFrame.new(node.p + Vector3.new(0, 6, 0))
-                    end)
-                    task.wait(NEXUS_CAP_NODE_WAIT)
-                    if NexusCapMobs() > 0 then
-                        st.miss = 0
-                    else
-                        st.miss = st.miss + 1
-                        if st.miss >= NEXUS_CAP_NODE_HOP then
-                            st.miss, st.i = 0, st.i + 1
-                        end
-                    end
-
-                    NexusCapPhase = "hold"
-                    local pos2 = NexusCapPoint()
-                    if pos2 then
-                        pcall(function()
-                            chrp.AssemblyLinearVelocity = Vector3.zero
-                            chrp.CFrame = CFrame.new(pos2 + Vector3.new(0, NEXUS_CAP_LIFT, 0))
-                        end)
-                    end
-                    task.wait(NEXUS_CAP_HAUL_WAIT)
-                else
-                    task.wait(NEXUS_IDLE)
-                end
-            end
-        end
-    end
-end)
-
-
--- ===== [NEXUS-OPT] load flag + live diagnostics =====
-NEXUSG.NEXUS_LV        = NEXUS_LV
-NEXUSG.NEXUS_OPT       = NEXUS_OPT
-NEXUSG.NexusPlayHubLoaded  = true
-NEXUSG.NEXUS_OPT_BUILD = "OPT-1"
-function NexusOptStats()
-    local s = NEXUS_OPT.stats
-    return {
-        queued   = s.queued,
-        ran      = s.ran,
-        dropQ    = s.dropQ,
-        dropInv  = s.dropInv,
-        inflight = s.inflight,
-        peakQ    = s.peakQ,
-        invOk    = s.invOk,
-    }
-end
-NEXUSG.NexusOptStats = NexusOptStats
-print("[NEXUS] optimizer build OPT-1 active (pool=" .. tostring(NEXUS_OPT.MAX_WORKERS) .. " inflight=" .. tostring(NEXUS_OPT.MAX_INFLIGHT) .. ")")
--- ===== [/NEXUS-OPT] =====
