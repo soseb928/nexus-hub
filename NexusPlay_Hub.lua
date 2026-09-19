@@ -1442,13 +1442,23 @@ function NexusBFCast(skill, targets, myModel, myHRP)
     if not myModel or not myHRP or not targets or #targets == 0 then return end
     if not NexusBFExists(skill) then return end
 
-    local first = targets[1]:FindFirstChild("HumanoidRootPart")
+    -- Rebuild the target list at cast time so a boss that respawns/replaces
+    -- its model is not hit through a stale Instance reference.
+    local liveTargets = {}
+    for _, t in ipairs(targets) do
+        if t and t.Parent then
+            local hum = t:FindFirstChildOfClass("Humanoid")
+            local hrp = t:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then
+                liveTargets[#liveTargets + 1] = t
+            end
+        end
+    end
+    if #liveTargets == 0 then return end
+
+    local first = liveTargets[1]:FindFirstChild("HumanoidRootPart")
     local dir = (first and (first.Position - myHRP.Position).Unit) or myHRP.CFrame.LookVector
 
-    -- Start the skill and apply its damage in the same sequential job.
-    -- The previous version launched both requests independently, which could
-    -- make DamageCharacter arrive before StartSkill finished and lose the
-    -- Black Flash/Serious Punch damage window.
     if NexusBFStartReady(skill) and not startInflight[skill] then
         startInflight[skill] = true
         dmgInflight[skill] = true
@@ -1460,17 +1470,36 @@ function NexusBFCast(skill, targets, myModel, myHRP)
             local charges = tonumber(BF_CHARGES) or 2
             local payload = NexusBFPayload(skill, myModel)
 
+            -- StartSkill must complete before the first damage request.
             pcall(function()
                 NexusGatedInvoke(StartSkill, skill, myModel, dir, nil, charges)
             end)
 
-            -- Give the server a frame to commit the started skill before the
-            -- damage request is sent.
-            task.wait()
+            -- Bosses can take a little longer to commit the skill state than
+            -- regular NPCs. Retry the damage window a few times instead of
+            -- relying on one frame-perfect request.
+            task.wait(0.05)
 
-            pcall(function()
-                NexusGatedInvoke(DamageCharacter, targets, true, payload)
-            end)
+            for attempt = 1, 3 do
+                local current = {}
+                for _, t in ipairs(liveTargets) do
+                    if t and t.Parent then
+                        local hum = t:FindFirstChildOfClass("Humanoid")
+                        local hrp = t:FindFirstChild("HumanoidRootPart")
+                        if hum and hrp and hum.Health > 0 then
+                            current[#current + 1] = t
+                        end
+                    end
+                end
+
+                if #current == 0 then break end
+
+                pcall(function()
+                    NexusGatedInvoke(DamageCharacter, current, true, payload)
+                end)
+
+                task.wait(0.05)
+            end
 
             startInflight[skill] = false
             dmgInflight[skill] = false
@@ -1481,7 +1510,7 @@ function NexusBFCast(skill, targets, myModel, myHRP)
         local payload = NexusBFPayload(skill, myModel)
         task.spawn(function()
             pcall(function()
-                NexusGatedInvoke(DamageCharacter, targets, true, payload)
+                NexusGatedInvoke(DamageCharacter, liveTargets, true, payload)
             end)
             dmgInflight[skill] = false
         end)
