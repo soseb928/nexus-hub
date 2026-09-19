@@ -13691,81 +13691,103 @@ do
         return obj:FindFirstChildWhichIsA("BasePart", true)
     end
 
-    local function NexusWatcherTextMatch(obj)
+    local function NexusWatcherDisplayMatch(obj)
         if not obj then return false end
-        local lowName = string.lower(tostring(obj.Name or ""))
-        if lowName == "watcher" or lowName:match("^watcher%d+$") then return true end
+        local n = string.lower(tostring(obj.Name or ""))
+        if n == "watcher" then return true end
 
-        local found = false
+        local matched = false
         pcall(function()
             for _, d in ipairs(obj:GetDescendants()) do
                 if d:IsA("TextLabel") or d:IsA("TextButton") then
                     local t = string.lower(tostring(d.Text or ""))
                     if t:match("^%s*watcher%s*$") then
-                        found = true
+                        matched = true
                         return
                     end
                 end
             end
         end)
-        return found
+        return matched
     end
 
     function NexusFindWatcher()
-        -- Watcher spawn locations are random. The parts under
-        -- Map.Spawnpoints.NPCs are only possible spawn locations.
-        -- We therefore look for the actual spawned NPC in Characters.Server.NPCs.
-        local spawnpoints = NexusWatcherSpawnpoints()
-        local npcFolder = nil
+        local npcFolder
         pcall(function() npcFolder = workspace.Characters.Server.NPCs end)
+        if not npcFolder then return nil end
 
-        if not npcFolder then
-            return nil
-        end
-
-        local best, bestScore = nil, -math.huge
-        local candidates = npcFolder:GetChildren()
-
-        for _, npc in ipairs(candidates) do
-            local root = NexusWatcherRoot(npc)
-            if root then
-                local score = -math.huge
-
-                if NexusWatcherTextMatch(npc) then
-                    score = 10000
-                end
-
-                -- If the NPC is near one of the 16 Watcher spawnpoints,
-                -- treat it as a Watcher candidate even when its internal
-                -- model name is unrelated.
-                for _, sp in ipairs(spawnpoints) do
-                    local d = (root.Position - sp.Position).Magnitude
-                    if d <= 25 then
-                        score = math.max(score, 5000 - d * 100)
-                    end
-                end
-
-                if score > bestScore then
-                    best, bestScore = npc, score
-                end
-            end
-        end
-
-        if bestScore > -math.huge then
-            return best
-        end
-
-        -- Fallback: sometimes the NPC may be parented deeper than NPCs.
-        local ok, descendants = pcall(function() return npcFolder:GetDescendants() end)
-        if ok then
-            for _, npc in ipairs(descendants) do
-                if (npc:IsA("Model") or npc:IsA("BasePart")) and NexusWatcherTextMatch(npc) then
+        -- One Watcher is active at a time. Prefer an actual NPC whose
+        -- name/display text identifies it as Watcher.
+        for _, npc in ipairs(npcFolder:GetChildren()) do
+            if NexusWatcherDisplayMatch(npc) then
+                if NexusWatcherRoot(npc) then
                     return npc
                 end
             end
         end
 
-        return nil
+        -- Fallback: match an active NPC to one of the known random
+        -- Watcher spawn locations. Require a humanoid so ordinary map
+        -- NPCs near a spawnpoint are not selected by mistake.
+        local spawnpoints = NexusWatcherSpawnpoints()
+        local best, bestDistance = nil, math.huge
+
+        for _, npc in ipairs(npcFolder:GetChildren()) do
+            local root = NexusWatcherRoot(npc)
+            local humanoid = npc:FindFirstChildOfClass("Humanoid")
+            if root and humanoid then
+                for _, sp in ipairs(spawnpoints) do
+                    local d = (root.Position - sp.Position).Magnitude
+                    if d <= 25 and d < bestDistance then
+                        best, bestDistance = npc, d
+                    end
+                end
+            end
+        end
+
+        return best
+    end
+
+    local function NexusWatcherTeleportController(position)
+        local moved = false
+
+        -- Use the game's MapController first. This avoids the player being
+        -- snapped back when the server corrects a raw CFrame teleport.
+        pcall(function()
+            local ps = LocalPlayer and LocalPlayer:FindFirstChild("PlayerScripts")
+            local client = ps and ps:FindFirstChild("Client")
+            local controllers = client and client:FindFirstChild("Controllers")
+            local module = controllers and controllers:FindFirstChild("MapController")
+            if module then
+                local controller = require(module)
+                if controller and controller.TeleportToPosition then
+                    controller:TeleportToPosition(position)
+                    moved = true
+                end
+            end
+        end)
+
+        if moved then return true end
+
+        -- Existing NexusPlay movement helper.
+        pcall(function()
+            if nexusTpTo then
+                moved = nexusTpTo(position) and true or false
+            end
+        end)
+        if moved then return true end
+
+        -- Final local fallback.
+        pcall(function()
+            local model = getModel and getModel() or nil
+            local root = model and model:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(position)
+                moved = true
+            end
+        end)
+
+        return moved
     end
 
     function NexusTeleportToWatcher()
@@ -13776,7 +13798,7 @@ do
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "No active Watcher was found. Watcher spawn locations are random.",
+                    Content = "No active Watcher was found.",
                     Type = "Error",
                     Duration = 6,
                 })
@@ -13784,6 +13806,7 @@ do
             return false
         end
 
+        local targetPosition = part.Position + Vector3.new(0, 6, 0)
         local playerModel = getModel and getModel() or nil
         local root = playerModel and playerModel:FindFirstChild("HumanoidRootPart")
 
@@ -13808,13 +13831,10 @@ do
             return false
         end
 
-        local ok, err = pcall(function()
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-            root.CFrame = part.CFrame + Vector3.new(0, 3, 0)
-        end)
+        local moved = NexusWatcherTeleportController(targetPosition)
 
-        if ok then
+        if moved then
+            task.wait(0.4)
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
@@ -13829,7 +13849,7 @@ do
         pcall(function()
             Library:Notify({
                 Title = "NEXUSPLAY HUB",
-                Content = "Teleport failed: " .. tostring(err),
+                Content = "Watcher was found, but the game rejected the teleport.",
                 Type = "Error",
                 Duration = 6,
             })
@@ -13847,6 +13867,7 @@ do
         })
     end)
     -- ===== [/NEXUSPLAY] Watcher NPC Teleport =====
+
 
 
 
