@@ -13666,6 +13666,373 @@ do
     pcall(function() StatusTab = Window:CreateTab({ Name = "Status", Icon = nexusTabIcon("Status", "info"), ImageSource = "Material" }) end)
     if not StatusTab then StatusTab = Window:CreateTab({ Name = "Status", Icon = "info", ImageSource = "Material" }) end
 
+    -- ===== [NEXUSPLAY] Investigation Automation =====
+    NEXUS_INVESTIGATION_ON = NEXUS_INVESTIGATION_ON or false
+    NEXUS_INV_ESSENCE_ON = NEXUS_INV_ESSENCE_ON or false
+    NEXUS_INV_HIDDEN_ON = NEXUS_INV_HIDDEN_ON or false
+    NEXUS_INV_REWARD_ON = NEXUS_INV_REWARD_ON or false
+    NEXUS_INV_RETRY_ON = NEXUS_INV_RETRY_ON or false
+    NEXUS_INV_DIFFICULTY = NEXUS_INV_DIFFICULTY or "Nightmare"
+    NEXUS_INV_SESSION = NEXUS_INV_SESSION or 0
+
+    local function NexusInvTextMatch(text, patterns)
+        local s = string.lower(tostring(text or ""))
+        for _, p in ipairs(patterns) do
+            if string.find(s, p, 1, true) then return true end
+        end
+        return false
+    end
+
+    local function NexusInvUiTexts()
+        local out = {}
+        local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then return out end
+
+        pcall(function()
+            for _, d in ipairs(pg:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    local t = tostring(d.Text or "")
+                    if t ~= "" then
+                        out[#out + 1] = { obj = d, text = t }
+                    end
+                end
+            end
+        end)
+        return out
+    end
+
+    local function NexusInvIsActive()
+        local texts = NexusInvUiTexts()
+        local hasRoom, hasLives, hasScore = false, false, false
+
+        for _, v in ipairs(texts) do
+            local t = string.lower(v.text)
+            if string.find(t, "room:", 1, true) then hasRoom = true end
+            if string.find(t, "lives left", 1, true) then hasLives = true end
+            if string.find(t, "score:", 1, true) then hasScore = true end
+        end
+
+        return hasRoom and (hasLives or hasScore)
+    end
+
+    local function NexusInvObjective()
+        local texts = NexusInvUiTexts()
+        local best = ""
+
+        for _, v in ipairs(texts) do
+            local t = tostring(v.text or "")
+            local low = string.lower(t)
+
+            if string.find(low, "time elapsed", 1, true)
+                or string.find(low, "room:", 1, true)
+                or string.find(low, "clear time", 1, true)
+                or string.find(low, "clear score", 1, true) then
+                continue
+            end
+
+            if string.find(low, "collect", 1, true)
+                or string.find(low, "eliminate", 1, true)
+                or string.find(low, "defeat", 1, true)
+                or string.find(low, "hidden", 1, true)
+                or string.find(low, "crate", 1, true) then
+                best = t
+            end
+        end
+
+        return best
+    end
+
+    local function NexusInvRoot(obj)
+        if not obj then return nil end
+        if obj:IsA("BasePart") then return obj end
+        if obj:IsA("Model") then
+            return obj.PrimaryPart
+                or obj:FindFirstChild("HumanoidRootPart")
+                or obj:FindFirstChildWhichIsA("BasePart", true)
+        end
+        return obj:FindFirstChildWhichIsA("BasePart", true)
+    end
+
+    local function NexusInvNearestEnemy()
+        local player = getModel and getModel() or nil
+        local root = player and player:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+
+        local best, bestDistance = nil, math.huge
+        local folder = workspace:FindFirstChild("Characters")
+        folder = folder and folder:FindFirstChild("Server")
+        folder = folder and folder:FindFirstChild("NPCs")
+
+        if not folder then return nil end
+
+        pcall(function()
+            for _, npc in ipairs(folder:GetChildren()) do
+                local hum = npc:FindFirstChildOfClass("Humanoid")
+                local hrp = npc:FindFirstChild("HumanoidRootPart")
+                if hum and hrp and hum.Health > 0 then
+                    local d = (hrp.Position - root.Position).Magnitude
+                    if d < bestDistance then
+                        best, bestDistance = npc, d
+                    end
+                end
+            end
+        end)
+
+        return best
+    end
+
+    local function NexusInvFindObject(patterns)
+        local player = getModel and getModel() or nil
+        local root = player and player:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+
+        local best, bestDistance = nil, math.huge
+        pcall(function()
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                local nm = string.lower(tostring(obj.Name or ""))
+                if NexusInvTextMatch(nm, patterns) then
+                    local part = NexusInvRoot(obj)
+                    if part then
+                        local d = (part.Position - root.Position).Magnitude
+                        if d < bestDistance then
+                            best, bestDistance = obj, d
+                        end
+                    end
+                end
+            end
+        end)
+        return best
+    end
+
+    local function NexusInvMoveTo(obj)
+        local part = NexusInvRoot(obj)
+        if not part then return false end
+
+        local pos = part.Position + Vector3.new(0, 4, 0)
+        local moved = false
+
+        pcall(function()
+            if nexusTpTo then
+                moved = nexusTpTo(pos) and true or false
+            end
+        end)
+
+        if not moved then
+            local player = getModel and getModel() or nil
+            local root = player and player:FindFirstChild("HumanoidRootPart")
+            if root then
+                pcall(function()
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                    root.CFrame = CFrame.new(pos)
+                    moved = true
+                end)
+            end
+        end
+
+        return moved
+    end
+
+    local function NexusInvInteractNear(patterns)
+        local player = getModel and getModel() or nil
+        local root = player and player:FindFirstChild("HumanoidRootPart")
+        if not root then return false end
+
+        local used = false
+        pcall(function()
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("ProximityPrompt") then
+                    local holder = obj.Parent
+                    local name = string.lower(tostring(holder and holder.Name or ""))
+                    local action = string.lower(tostring(obj.ActionText or ""))
+                    local promptName = name .. " " .. action
+
+                    if NexusInvTextMatch(promptName, patterns)
+                        and holder
+                        and holder:IsA("BasePart")
+                        and (holder.Position - root.Position).Magnitude <= 12 then
+
+                        if fireproximityprompt then
+                            pcall(function() fireproximityprompt(obj) end)
+                            used = true
+                        end
+                    end
+                end
+            end
+        end)
+
+        return used
+    end
+
+    local function NexusInvActivateButton(patterns)
+        local active = false
+        local texts = NexusInvUiTexts()
+
+        for _, v in ipairs(texts) do
+            local button = v.obj
+            if button:IsA("TextButton") and NexusInvTextMatch(v.text, patterns) then
+                local visible = true
+                pcall(function() visible = button.Visible end)
+
+                if visible then
+                    pcall(function() button:Activate() end)
+                    active = true
+                    break
+                end
+            end
+        end
+
+        return active
+    end
+
+    local function NexusInvCombatStep()
+        if not NEXUS_INVESTIGATION_ON or not NexusInvIsActive() then return end
+
+        -- Reuse the hub's existing combat engine instead of creating a second
+        -- damage loop. This keeps the investigation automation compatible with
+        -- Auto Attack, Reach & Kill, and the existing remote gates.
+        FastOn = true
+        if NEXUS_LV.ReachOn ~= nil then
+            NEXUS_LV.ReachOn = true
+        end
+
+        local enemy = NexusInvNearestEnemy()
+        if enemy then
+            NexusInvMoveTo(enemy)
+        end
+    end
+
+    function NexusSetInvestigation(on)
+        NEXUS_INVESTIGATION_ON = on and true or false
+        NEXUS_INV_SESSION = NEXUS_INV_SESSION + 1
+
+        if not NEXUS_INVESTIGATION_ON then return end
+
+        local runId = NEXUS_INV_SESSION
+        task.spawn(function()
+            while NEXUSG.NexusPlayHubSession == SESSION
+                and NEXUS_INVESTIGATION_ON
+                and NEXUS_INV_SESSION == runId do
+
+                if NexusInvIsActive() then
+                    local objective = string.lower(NexusInvObjective())
+
+                    if NEXUS_INV_ESSENCE_ON
+                        and (string.find(objective, "essence", 1, true)
+                            or string.find(objective, "collect", 1, true)) then
+                        local essence = NexusInvFindObject({
+                            "cursedessence",
+                            "cursed essence",
+                            "essence",
+                        })
+                        if essence then
+                            NexusInvMoveTo(essence)
+                            NexusInvInteractNear({ "essence", "collect", "pick" })
+                        end
+
+                    elseif NEXUS_INV_HIDDEN_ON
+                        and string.find(objective, "hidden", 1, true) then
+                        local hidden = NexusInvFindObject({
+                            "hidden",
+                            "mystery",
+                            "secret",
+                        })
+                        if hidden then
+                            NexusInvMoveTo(hidden)
+                            NexusInvInteractNear({ "hidden", "investigate", "interact" })
+                        end
+
+                    elseif NEXUS_INV_HIDDEN_ON
+                        and string.find(objective, "crate", 1, true) then
+                        local crate = NexusInvFindObject({
+                            "crate",
+                            "chest",
+                            "reward",
+                        })
+                        if crate then
+                            NexusInvMoveTo(crate)
+                            NexusInvInteractNear({ "crate", "open", "chest", "interact" })
+                        end
+
+                    else
+                        NexusInvCombatStep()
+                    end
+
+                    if NEXUS_INV_REWARD_ON then
+                        NexusInvActivateButton({
+                            "open reward",
+                            "claim reward",
+                            "claim",
+                            "open crate",
+                        })
+                    end
+
+                    if NEXUS_INV_RETRY_ON then
+                        NexusInvActivateButton({
+                            "retry",
+                            "play again",
+                            "run again",
+                        })
+                    end
+                end
+
+                task.wait(0.35)
+            end
+        end)
+    end
+
+    pcall(function()
+        local InvestigationTab = Window:CreateTab({
+            Name = "Investigation",
+            Icon = "search",
+            ImageSource = "Material",
+        })
+
+        local section = InvestigationTab:CreateSection(
+            "Investigations",
+            "Automate Edo-Period Investigation runs"
+        )
+
+        PT(section, "NexusInvestigationOn", "Auto Investigation", function(on)
+            NexusSetInvestigation(on)
+        end)
+
+        section:CreateDropdown({
+            Name = "Select Difficulty",
+            Options = { "Easy", "Normal", "Hard", "Nightmare" },
+            CurrentOption = { S("InvestigationDifficulty", "Nightmare") },
+            MultipleOptions = false,
+            Callback = function(choice)
+                local picked = (type(choice) == "table" and choice[1]) or choice
+                NEXUS_INV_DIFFICULTY = picked or "Nightmare"
+                Settings.InvestigationDifficulty = NEXUS_INV_DIFFICULTY
+                saveSettings()
+            end,
+        })
+
+        PT(section, "NexusInvestigationEssenceOn", "Auto Collect Essence", function(on)
+            NEXUS_INV_ESSENCE_ON = on and true or false
+        end)
+
+        PT(section, "NexusInvestigationHiddenOn", "Auto Hidden Objectives", function(on)
+            NEXUS_INV_HIDDEN_ON = on and true or false
+        end)
+
+        PT(section, "NexusInvestigationRewardOn", "Auto Open Reward", function(on)
+            NEXUS_INV_REWARD_ON = on and true or false
+        end)
+
+        PT(section, "NexusInvestigationRetryOn", "Auto Retry", function(on)
+            NEXUS_INV_RETRY_ON = on and true or false
+        end)
+
+        InvestigationTab:CreateParagraph({
+            Title = "Automation Status",
+            Content = "The automation activates when an Investigation room is detected. It reuses the hub combat engine and handles nearby objective interactions.",
+        })
+    end)
+    -- ===== [/NEXUSPLAY] Investigation Automation =====
+
     -- ===== [NEXUSPLAY] Watcher NPC Teleport =====
     local function NexusWatcherSpawnpoints()
         local out = {}
