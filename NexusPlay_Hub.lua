@@ -1441,23 +1441,48 @@ end
 function NexusBFCast(skill, targets, myModel, myHRP)
     if not myModel or not myHRP or not targets or #targets == 0 then return end
     if not NexusBFExists(skill) then return end
+
     local first = targets[1]:FindFirstChild("HumanoidRootPart")
     local dir = (first and (first.Position - myHRP.Position).Unit) or myHRP.CFrame.LookVector
+
+    -- Start the skill and apply its damage in the same sequential job.
+    -- The previous version launched both requests independently, which could
+    -- make DamageCharacter arrive before StartSkill finished and lose the
+    -- Black Flash/Serious Punch damage window.
     if NexusBFStartReady(skill) and not startInflight[skill] then
         startInflight[skill] = true
+        dmgInflight[skill] = true
+
         NexusSetFlag("CanBlackFlash", true)
         NexusSetFlag("BlackFlashSkill", skill)
+
         task.spawn(function()
             local charges = tonumber(BF_CHARGES) or 2
-            pcall(function() NexusGatedInvoke(StartSkill, skill, myModel, dir, nil, charges) end)
+            local payload = NexusBFPayload(skill, myModel)
+
+            pcall(function()
+                NexusGatedInvoke(StartSkill, skill, myModel, dir, nil, charges)
+            end)
+
+            -- Give the server a frame to commit the started skill before the
+            -- damage request is sent.
+            task.wait()
+
+            pcall(function()
+                NexusGatedInvoke(DamageCharacter, targets, true, payload)
+            end)
+
             startInflight[skill] = false
+            dmgInflight[skill] = false
         end)
-    end
-    if damageReady(skill) and not dmgInflight[skill] then
+    elseif damageReady(skill) and not dmgInflight[skill] then
+        -- Fallback damage window when the skill is already active.
         dmgInflight[skill] = true
         local payload = NexusBFPayload(skill, myModel)
         task.spawn(function()
-            pcall(function() NexusGatedInvoke(DamageCharacter, targets, true, payload) end)
+            pcall(function()
+                NexusGatedInvoke(DamageCharacter, targets, true, payload)
+            end)
             dmgInflight[skill] = false
         end)
     end
