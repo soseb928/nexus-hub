@@ -13730,15 +13730,29 @@ do
             return false
         end
 
-        local character = LocalPlayer and LocalPlayer.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
+        -- Use the hub's own player-model resolver. In this game the
+        -- controllable character can be represented by a server model,
+        -- so LocalPlayer.Character is not always the correct model.
+        local targetPos = part.Position + Vector3.new(0, 3, 0)
+        local playerModel = getModel and getModel() or nil
+        local root = playerModel and playerModel:FindFirstChild("HumanoidRootPart")
+
+        if not root then
+            local deadline = os.clock() + 5
+            repeat
+                task.wait(0.1)
+                playerModel = getModel and getModel() or nil
+                root = playerModel and playerModel:FindFirstChild("HumanoidRootPart")
+            until root or os.clock() >= deadline
+        end
+
         if not root then
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "Your character is not ready yet.",
+                    Content = "Your character model could not be found. Please wait for the character to finish loading and try again.",
                     Type = "Error",
-                    Duration = 5,
+                    Duration = 6,
                 })
             end)
             return false
@@ -13747,7 +13761,7 @@ do
         local ok, err = pcall(function()
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            root.CFrame = part.CFrame + Vector3.new(0, 3, 0)
+            root.CFrame = CFrame.new(targetPos)
         end)
 
         if ok then
