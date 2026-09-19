@@ -13674,6 +13674,8 @@ do
     NEXUS_INV_RETRY_ON = NEXUS_INV_RETRY_ON or false
     NEXUS_INV_DIFFICULTY = NEXUS_INV_DIFFICULTY or "Nightmare"
     NEXUS_INV_SESSION = NEXUS_INV_SESSION or 0
+    NEXUS_INV_PREV_FAST = nil
+    NEXUS_INV_PREV_REACH = nil
 
     local function NexusInvTextMatch(text, patterns)
         local s = string.lower(tostring(text or ""))
@@ -13906,7 +13908,18 @@ do
         NEXUS_INVESTIGATION_ON = on and true or false
         NEXUS_INV_SESSION = NEXUS_INV_SESSION + 1
 
-        if not NEXUS_INVESTIGATION_ON then return end
+        if not NEXUS_INVESTIGATION_ON then
+            if NEXUS_INV_PREV_FAST ~= nil then FastOn = NEXUS_INV_PREV_FAST end
+            if NEXUS_INV_PREV_REACH ~= nil and NEXUS_LV.ReachOn ~= nil then
+                NEXUS_LV.ReachOn = NEXUS_INV_PREV_REACH
+            end
+            NEXUS_INV_PREV_FAST = nil
+            NEXUS_INV_PREV_REACH = nil
+            return
+        end
+
+        NEXUS_INV_PREV_FAST = FastOn
+        NEXUS_INV_PREV_REACH = NEXUS_LV.ReachOn
 
         local runId = NEXUS_INV_SESSION
         task.spawn(function()
