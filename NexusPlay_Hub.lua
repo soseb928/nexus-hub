@@ -13667,44 +13667,20 @@ do
     if not StatusTab then StatusTab = Window:CreateTab({ Name = "Status", Icon = "info", ImageSource = "Material" }) end
 
     -- ===== [NEXUSPLAY] Watcher NPC Teleport =====
-    function NexusFindWatcher()
-        -- The game stores Watcher NPC spawn parts here:
-        -- Workspace.Map.Spawnpoints.NPCs.Watcher
-        local direct = workspace:FindFirstChild("Map")
-        direct = direct and direct:FindFirstChild("Spawnpoints")
-        direct = direct and direct:FindFirstChild("NPCs")
-        direct = direct and direct:FindFirstChild("Watcher")
-        if direct and direct:IsA("BasePart") then
-            return direct
-        end
-
-        -- Fallback for different map/load states.
-        local npcs = workspace:FindFirstChild("Map")
-        npcs = npcs and npcs:FindFirstChild("Spawnpoints")
-        npcs = npcs and npcs:FindFirstChild("NPCs")
-        if npcs then
-            local exact = npcs:FindFirstChild("Watcher")
-            if exact then return exact end
-            for _, obj in ipairs(npcs:GetChildren()) do
-                if obj:IsA("BasePart") and string.lower(obj.Name) == "watcher" then
-                    return obj
+    local function NexusWatcherSpawnpoints()
+        local out = {}
+        pcall(function()
+            local folder = workspace.Map.Spawnpoints.NPCs
+            for _, obj in ipairs(folder:GetChildren()) do
+                if obj:IsA("BasePart") and string.lower(obj.Name):match("^watcher%d*$") then
+                    out[#out + 1] = obj
                 end
             end
-        end
-
-        -- Last fallback: scan descendants for a Part named Watcher.
-        local ok, descendants = pcall(function() return workspace:GetDescendants() end)
-        if ok then
-            for _, obj in ipairs(descendants) do
-                if obj:IsA("BasePart") and string.lower(obj.Name) == "watcher" then
-                    return obj
-                end
-            end
-        end
-        return nil
+        end)
+        return out
     end
 
-    function NexusWatcherPart(obj)
+    local function NexusWatcherRoot(obj)
         if not obj then return nil end
         if obj:IsA("BasePart") then return obj end
         if obj:IsA("Model") then
@@ -13715,14 +13691,92 @@ do
         return obj:FindFirstChildWhichIsA("BasePart", true)
     end
 
+    local function NexusWatcherTextMatch(obj)
+        if not obj then return false end
+        local lowName = string.lower(tostring(obj.Name or ""))
+        if lowName == "watcher" or lowName:match("^watcher%d+$") then return true end
+
+        local found = false
+        pcall(function()
+            for _, d in ipairs(obj:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    local t = string.lower(tostring(d.Text or ""))
+                    if t:match("^%s*watcher%s*$") then
+                        found = true
+                        return
+                    end
+                end
+            end
+        end)
+        return found
+    end
+
+    function NexusFindWatcher()
+        -- Watcher spawn locations are random. The parts under
+        -- Map.Spawnpoints.NPCs are only possible spawn locations.
+        -- We therefore look for the actual spawned NPC in Characters.Server.NPCs.
+        local spawnpoints = NexusWatcherSpawnpoints()
+        local npcFolder = nil
+        pcall(function() npcFolder = workspace.Characters.Server.NPCs end)
+
+        if not npcFolder then
+            return nil
+        end
+
+        local best, bestScore = nil, -math.huge
+        local candidates = npcFolder:GetChildren()
+
+        for _, npc in ipairs(candidates) do
+            local root = NexusWatcherRoot(npc)
+            if root then
+                local score = -math.huge
+
+                if NexusWatcherTextMatch(npc) then
+                    score = 10000
+                end
+
+                -- If the NPC is near one of the 16 Watcher spawnpoints,
+                -- treat it as a Watcher candidate even when its internal
+                -- model name is unrelated.
+                for _, sp in ipairs(spawnpoints) do
+                    local d = (root.Position - sp.Position).Magnitude
+                    if d <= 25 then
+                        score = math.max(score, 5000 - d * 100)
+                    end
+                end
+
+                if score > bestScore then
+                    best, bestScore = npc, score
+                end
+            end
+        end
+
+        if bestScore > -math.huge then
+            return best
+        end
+
+        -- Fallback: sometimes the NPC may be parented deeper than NPCs.
+        local ok, descendants = pcall(function() return npcFolder:GetDescendants() end)
+        if ok then
+            for _, npc in ipairs(descendants) do
+                if (npc:IsA("Model") or npc:IsA("BasePart")) and NexusWatcherTextMatch(npc) then
+                    return npc
+                end
+            end
+        end
+
+        return nil
+    end
+
     function NexusTeleportToWatcher()
         local watcher = NexusFindWatcher()
-        local part = NexusWatcherPart(watcher)
+        local part = NexusWatcherRoot(watcher)
+
         if not part then
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "Watcher NPC was not found at Workspace.Map.Spawnpoints.NPCs.",
+                    Content = "No active Watcher was found. Watcher spawn locations are random.",
                     Type = "Error",
                     Duration = 6,
                 })
@@ -13730,10 +13784,6 @@ do
             return false
         end
 
-        -- Use the hub's own player-model resolver. In this game the
-        -- controllable character can be represented by a server model,
-        -- so LocalPlayer.Character is not always the correct model.
-        local targetPos = part.Position + Vector3.new(0, 3, 0)
         local playerModel = getModel and getModel() or nil
         local root = playerModel and playerModel:FindFirstChild("HumanoidRootPart")
 
@@ -13750,7 +13800,7 @@ do
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "Your character model could not be found. Please wait for the character to finish loading and try again.",
+                    Content = "Your character model could not be found. Please wait and try again.",
                     Type = "Error",
                     Duration = 6,
                 })
@@ -13761,14 +13811,14 @@ do
         local ok, err = pcall(function()
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
-            root.CFrame = CFrame.new(targetPos)
+            root.CFrame = part.CFrame + Vector3.new(0, 3, 0)
         end)
 
         if ok then
             pcall(function()
                 Library:Notify({
                     Title = "NEXUSPLAY HUB",
-                    Content = "Teleported to Watcher.",
+                    Content = "Teleported to the active Watcher.",
                     Type = "Success",
                     Duration = 4,
                 })
@@ -13790,13 +13840,14 @@ do
     pcall(function()
         local watcherSection = StatusTab:CreateSection("NPC Teleport", "Teleport directly to important NPCs")
         watcherSection:CreateButton({
-            Name = "Teleport to Watcher",
+            Name = "Teleport to Active Watcher",
             Callback = function()
                 NexusTeleportToWatcher()
             end,
         })
     end)
     -- ===== [/NEXUSPLAY] Watcher NPC Teleport =====
+
 
 
 
