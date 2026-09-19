@@ -13857,6 +13857,64 @@ do
         return false
     end
 
+    NEXUS_AUTO_WATCHER_ON = NEXUS_AUTO_WATCHER_ON or false
+    NEXUS_AUTO_WATCHER_SESSION = NEXUS_AUTO_WATCHER_SESSION or 0
+    NEXUS_AUTO_WATCHER_LAST = nil
+    NEXUS_AUTO_WATCHER_NEXT = 0
+
+    function NexusSetAutoWatcher(on)
+        NEXUS_AUTO_WATCHER_ON = on and true or false
+        NEXUS_AUTO_WATCHER_SESSION = NEXUS_AUTO_WATCHER_SESSION + 1
+
+        if not NEXUS_AUTO_WATCHER_ON then
+            NEXUS_AUTO_WATCHER_LAST = nil
+            NEXUS_AUTO_WATCHER_NEXT = 0
+            return
+        end
+
+        local runId = NEXUS_AUTO_WATCHER_SESSION
+        task.spawn(function()
+            while NEXUSG.NexusPlayHubSession == SESSION
+                and NEXUS_AUTO_WATCHER_ON
+                and NEXUS_AUTO_WATCHER_SESSION == runId do
+
+                local now = os.clock()
+                if now >= NEXUS_AUTO_WATCHER_NEXT then
+                    local watcher = NexusFindWatcher()
+                    local part = NexusWatcherRoot(watcher)
+
+                    if part and part.Parent then
+                        local playerModel = getModel and getModel() or nil
+                        local root = playerModel and playerModel:FindFirstChild("HumanoidRootPart")
+                        local distance = root and (root.Position - part.Position).Magnitude or math.huge
+
+                        -- Teleport when a new Watcher appears, or when the player
+                        -- has been moved too far away from the active Watcher.
+                        if watcher ~= NEXUS_AUTO_WATCHER_LAST or distance > 45 then
+                            local moved = NexusWatcherTeleportController(
+                                part.Position + Vector3.new(0, 6, 0)
+                            )
+
+                            if moved then
+                                NEXUS_AUTO_WATCHER_LAST = watcher
+                            end
+                        end
+
+                        -- Check frequently enough to catch the next random Watcher
+                        -- spawn without repeatedly teleporting during combat.
+                        NEXUS_AUTO_WATCHER_NEXT = now + 2
+                    else
+                        -- No active Watcher yet. Keep checking for the next spawn.
+                        NEXUS_AUTO_WATCHER_LAST = nil
+                        NEXUS_AUTO_WATCHER_NEXT = now + 1
+                    end
+                end
+
+                task.wait(0.25)
+            end
+        end)
+    end
+
     pcall(function()
         local watcherSection = StatusTab:CreateSection("NPC Teleport", "Teleport directly to important NPCs")
         watcherSection:CreateButton({
@@ -13865,6 +13923,9 @@ do
                 NexusTeleportToWatcher()
             end,
         })
+        PT(watcherSection, "NexusAutoWatcherOn", "Auto Teleport to Watcher", function(on)
+            NexusSetAutoWatcher(on)
+        end)
     end)
     -- ===== [/NEXUSPLAY] Watcher NPC Teleport =====
 
