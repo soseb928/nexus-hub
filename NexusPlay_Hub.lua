@@ -14183,45 +14183,79 @@ do
     end
 
     local function NexusWatcherTeleportController(position)
-        local moved = false
+        local function getRoot()
+            local model = getModel and getModel() or nil
+            return model and model:FindFirstChild("HumanoidRootPart")
+        end
 
-        -- Use the game's MapController first. This avoids the player being
-        -- snapped back when the server corrects a raw CFrame teleport.
-        pcall(function()
-            local ps = LocalPlayer and LocalPlayer:FindFirstChild("PlayerScripts")
-            local client = ps and ps:FindFirstChild("Client")
-            local controllers = client and client:FindFirstChild("Controllers")
-            local module = controllers and controllers:FindFirstChild("MapController")
-            if module then
-                local controller = require(module)
-                if controller and controller.TeleportToPosition then
-                    controller:TeleportToPosition(position)
+        local function reached(root)
+            if not root or not root.Parent then return false end
+            local ok, distance = pcall(function()
+                return (root.Position - position).Magnitude
+            end)
+            return ok and distance <= 12
+        end
+
+        -- A teleport API returning without error does not mean the server
+        -- accepted the movement. Always verify the player's actual position.
+        for _ = 1, 3 do
+            local root = getRoot()
+            if reached(root) then return true end
+
+            local moved = false
+
+            -- Prefer the game's MapController so the server's movement
+            -- validation is respected and raw CFrame correction is avoided.
+            pcall(function()
+                local ps = LocalPlayer and LocalPlayer:FindFirstChild("PlayerScripts")
+                local client = ps and ps:FindFirstChild("Client")
+                local controllers = client and client:FindFirstChild("Controllers")
+                local module = controllers and controllers:FindFirstChild("MapController")
+                if module then
+                    local controller = require(module)
+                    if controller and controller.TeleportToPosition then
+                        controller:TeleportToPosition(position)
+                        moved = true
+                    end
+                end
+            end)
+
+            task.wait(0.12)
+            root = getRoot()
+            if reached(root) then return true end
+
+            -- Existing NexusPlay movement helper.
+            pcall(function()
+                if nexusTpTo then
+                    moved = nexusTpTo(position) and true or moved
+                end
+            end)
+
+            task.wait(0.12)
+            root = getRoot()
+            if reached(root) then return true end
+
+            -- Final local fallback.
+            pcall(function()
+                root = getRoot()
+                if root then
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                    root.CFrame = CFrame.new(position)
                     moved = true
                 end
+            end)
+
+            task.wait(0.12)
+            root = getRoot()
+            if reached(root) then return true end
+
+            if not moved then
+                task.wait(0.15)
             end
-        end)
+        end
 
-        if moved then return true end
-
-        -- Existing NexusPlay movement helper.
-        pcall(function()
-            if nexusTpTo then
-                moved = nexusTpTo(position) and true or false
-            end
-        end)
-        if moved then return true end
-
-        -- Final local fallback.
-        pcall(function()
-            local model = getModel and getModel() or nil
-            local root = model and model:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.CFrame = CFrame.new(position)
-                moved = true
-            end
-        end)
-
-        return moved
+        return false
     end
 
     function NexusTeleportToWatcher()
@@ -14325,18 +14359,35 @@ do
                         -- Teleport when a new Watcher appears, or when the player
                         -- has been moved too far away from the active Watcher.
                         if watcher ~= NEXUS_AUTO_WATCHER_LAST or distance > 45 then
-                            local moved = NexusWatcherTeleportController(
-                                part.Position + Vector3.new(0, 6, 0)
-                            )
+                            local targetPosition = part.Position + Vector3.new(0, 6, 0)
+                            local moved = NexusWatcherTeleportController(targetPosition)
 
+                            -- Only mark this Watcher as handled after verifying
+                            -- that the player actually reached it. This prevents
+                            -- a rejected/snap-back teleport from blocking retries.
                             if moved then
-                                NEXUS_AUTO_WATCHER_LAST = watcher
+                                local verifyModel = getModel and getModel() or nil
+                                local verifyRoot = verifyModel and verifyModel:FindFirstChild("HumanoidRootPart")
+                                local verified = false
+                                if verifyRoot then
+                                    local ok, verifyDistance = pcall(function()
+                                        return (verifyRoot.Position - targetPosition).Magnitude
+                                    end)
+                                    verified = ok and verifyDistance <= 12
+                                end
+                                if verified then
+                                    NEXUS_AUTO_WATCHER_LAST = watcher
+                                else
+                                    NEXUS_AUTO_WATCHER_LAST = nil
+                                end
+                            else
+                                NEXUS_AUTO_WATCHER_LAST = nil
                             end
                         end
 
-                        -- Check frequently enough to catch the next random Watcher
-                        -- spawn without repeatedly teleporting during combat.
-                        NEXUS_AUTO_WATCHER_NEXT = now + 2
+                        -- Keep the loop responsive so a failed teleport or a
+                        -- newly spawned random Watcher is retried quickly.
+                        NEXUS_AUTO_WATCHER_NEXT = now + 0.75
                     else
                         -- No active Watcher yet. Keep checking for the next spawn.
                         NEXUS_AUTO_WATCHER_LAST = nil
