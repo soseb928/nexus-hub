@@ -17230,25 +17230,49 @@ end }
         return false
     end
 
-    local function nexusNpcRaidInteract()
-        local pr = nexusNpcRaidFindPrompt()
-        if not pr then return false end
+    local function nexusNpcRaidEnterFromGameModes()
+        if nexusInRaidServer() then return true end
 
-        local holder = pr.Parent
-        local part = holder and (holder:IsA("BasePart") and holder or holder:FindFirstChildWhichIsA("BasePart", true))
-        if part then
-            local pos = part.Position + Vector3.new(0, 4, 0)
-            pcall(function()
-                nexusTpTo(pos)
-            end)
+        local list = nexusNpcRaidUiTexts()
+        local function clickExact(text)
+            for _, v in ipairs(list) do
+                local b = v.obj
+                if b:IsA("TextButton") and b.Visible then
+                    if string.lower(string.gsub(tostring(b.Text or ""), "%s+", " ")) == string.lower(text) then
+                        return pcall(function() b:Activate() end)
+                    end
+                end
+            end
+            return false
+        end
+
+        -- The game's supported route is:
+        -- Main Menu -> Gamemodes -> Raids.
+        if clickExact("Gamemodes") then
             task.wait(0.35)
         end
 
-        local fired = nexusFirePrompt(pr)
-        if fired then
-            NEXUS_NPC_RAID_ACTIVE = true
+        local after = nexusNpcRaidUiTexts()
+        for _, v in ipairs(after) do
+            local b = v.obj
+            if b:IsA("TextButton") and b.Visible then
+                local t = string.lower(tostring(b.Text or ""))
+                if t == "raids" then
+                    local ok = pcall(function() b:Activate() end)
+                    if ok then
+                        task.wait(0.5)
+                        return true
+                    end
+                end
+            end
         end
-        return fired
+        return false
+    end
+
+    local function nexusNpcRaidInteract()
+        -- NPC is only a shortcut to the same Raids place. Prefer the game's
+        -- native Main Menu -> Gamemodes -> Raids route.
+        return nexusNpcRaidEnterFromGameModes()
     end
 
     local function nexusNpcRaidFindBoss()
@@ -17317,8 +17341,13 @@ end }
                     end
 
                 else
-                    local started = nexusNpcRaidInteract()
-                    if not started then task.wait(0.5) end
+                    if nexusInRaidServer() then
+                        NEXUS_NPC_RAID_ACTIVE = true
+                        task.wait(0.5)
+                    else
+                        local started = nexusNpcRaidInteract()
+                        if not started then task.wait(0.5) end
+                    end
                 end
             end
         end)
