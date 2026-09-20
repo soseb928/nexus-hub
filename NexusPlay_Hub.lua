@@ -17233,38 +17233,62 @@ end }
     local function nexusNpcRaidEnterFromGameModes()
         if nexusInRaidServer() then return true end
 
-        local list = nexusNpcRaidUiTexts()
-        local function clickExact(text)
-            for _, v in ipairs(list) do
-                local b = v.obj
-                if b:IsA("TextButton") and b.Visible then
-                    if string.lower(string.gsub(tostring(b.Text or ""), "%s+", " ")) == string.lower(text) then
-                        return pcall(function() b:Activate() end)
-                    end
-                end
+        local function activateGuiObject(obj)
+            if not obj then return false end
+            local b = obj
+            if not b:IsA("GuiButton") then
+                b = obj:FindFirstAncestorWhichIsA("GuiButton")
             end
+            if not b then return false end
+            local ok = pcall(function() b:Activate() end)
+            if ok then return true end
+            pcall(function()
+                if firesignal then
+                    if b.Activated then firesignal(b.Activated) end
+                    if b.MouseButton1Click then firesignal(b.MouseButton1Click) end
+                end
+            end)
             return false
         end
 
-        -- The game's supported route is:
-        -- Main Menu -> Gamemodes -> Raids.
-        if clickExact("Gamemodes") then
-            task.wait(0.35)
-        end
-
-        local after = nexusNpcRaidUiTexts()
-        for _, v in ipairs(after) do
-            local b = v.obj
-            if b:IsA("TextButton") and b.Visible then
-                local t = string.lower(tostring(b.Text or ""))
-                if t == "raids" then
-                    local ok = pcall(function() b:Activate() end)
-                    if ok then
-                        task.wait(0.5)
-                        return true
+        local function findAndActivateExact(text)
+            local wanted = string.lower(string.gsub(tostring(text), "%s+", " "))
+            local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return false end
+            local found = false
+            pcall(function()
+                for _, d in ipairs(pg:GetDescendants()) do
+                    if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("ImageButton") then
+                        local raw = tostring(d.Text or "")
+                        if raw ~= "" then
+                            local t = string.lower(string.gsub(raw, "%s+", " "))
+                            if t == wanted and d.Visible ~= false then
+                                if activateGuiObject(d) then found = true return end
+                            end
+                        end
                     end
                 end
-            end
+            end)
+            return found
+        end
+
+        -- Main Menu -> Gamemodes -> Raids.
+        -- The game uses button containers with TextLabels, so activating the
+        -- TextLabel itself is not sufficient.
+        findAndActivateExact("Gamemodes")
+        task.wait(0.25)
+
+        if findAndActivateExact("Raids") then
+            task.wait(0.5)
+            return true
+        end
+
+        -- If the Gamemodes popup is already open, try again after its UI
+        -- finishes rendering.
+        task.wait(0.35)
+        if findAndActivateExact("Raids") then
+            task.wait(0.5)
+            return true
         end
         return false
     end
