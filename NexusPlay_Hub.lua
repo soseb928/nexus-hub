@@ -17190,7 +17190,7 @@ end }
     end
 
     local function nexusNpcRaidQuota()
-        local killed, total
+        local bestKilled, bestTotal, bestScore = nil, nil, -math.huge
         pcall(function()
             local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
             if not pg then return end
@@ -17200,28 +17200,21 @@ end }
                         if d:IsA("TextLabel") or d:IsA("TextButton") then
                             local t = tostring(d.Text or "")
                             local low = string.lower(t)
-
-                            -- Hollow Purple timer and NPC quota are displayed in separate UI labels.
-                            -- Example:
-                            --   "Hollow Purple (00:30)"
-                            --   "Defeat PLACEHOLDER.NPCs (0/6)"
                             local a, b = string.match(t, "Hollow%s+Purple.-%((%d+)%s*/%s*(%d+)%)")
+                            if not (a and b) then
+                                a, b = string.match(t, "Defeat.-%((%d+)%s*/%s*(%d+)%)")
+                            end
+                            if not (a and b) and string.find(low, "hollow purple", 1, true) then
+                                a, b = string.match(t, "%((%d+)%s*/%s*(%d+)%)")
+                            end
                             if a and b then
-                                killed, total = tonumber(a), tonumber(b)
-                                return
-                            end
-
-                            local c, e = string.match(t, "Defeat.-%((%d+)%s*/%s*(%d+)%)")
-                            if c and e then
-                                killed, total = tonumber(c), tonumber(e)
-                                return
-                            end
-
-                            if string.find(low, "hollow purple", 1, true) then
-                                local x, y = string.match(t, "%((%d+)%s*/%s*(%d+)%)")
-                                if x and y then
-                                    killed, total = tonumber(x), tonumber(y)
-                                    return
+                                local score = 0
+                                if string.find(low, "hollow purple", 1, true) then score = score + 100 end
+                                if string.find(low, "defeat", 1, true) then score = score + 30 end
+                                if string.find(low, "npc", 1, true) then score = score + 20 end
+                                if string.find(low, "placeholder", 1, true) then score = score + 20 end
+                                if score > bestScore then
+                                    bestKilled, bestTotal, bestScore = tonumber(a), tonumber(b), score
                                 end
                             end
                         end
@@ -17229,7 +17222,7 @@ end }
                 end
             end
         end)
-        return killed, total
+        return bestKilled, bestTotal
     end
 
     local function nexusNpcRaidHollowPurpleActive()
@@ -17240,7 +17233,8 @@ end }
             return killed < total
         end
 
-        -- The game can show the objective title and the quota in different labels.
+        -- If the quota is temporarily missing, use the actual Hollow Purple timer
+        -- instead of treating a stale title label as active forever.
         local active = false
         pcall(function()
             local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
@@ -17248,10 +17242,16 @@ end }
             for _, g in ipairs(pg:GetChildren()) do
                 if g.Name ~= "NexusPlayHub" then
                     for _, d in ipairs(g:GetDescendants()) do
-                        if (d:IsA("TextLabel") or d:IsA("TextButton"))
-                            and string.find(string.lower(tostring(d.Text or "")), "hollow purple", 1, true) then
-                            active = true
-                            return
+                        if d:IsA("TextLabel") or d:IsA("TextButton") then
+                            local t = tostring(d.Text or "")
+                            local low = string.lower(t)
+                            if string.find(low, "hollow purple", 1, true) then
+                                local mm, ss = string.match(t, "Hollow%s+Purple.-%((%d+)%s*:%s*(%d+)%)")
+                                if mm and ss then
+                                    active = (tonumber(mm) or 0) * 60 + (tonumber(ss) or 0) > 0
+                                    if active then return end
+                                end
+                            end
                         end
                     end
                 end
@@ -17296,13 +17296,17 @@ end }
         pcall(function()
             local f = workspace.Characters and workspace.Characters.Server and workspace.Characters.Server.NPCs
             if f then
-                for _, m in ipairs(f:GetChildren()) do push(m) end
+                for _, m in ipairs(f:GetDescendants()) do
+                    if m:IsA("Model") then push(m) end
+                end
             end
         end)
         pcall(function()
             local f = workspace.Characters and workspace.Characters.Client
             if f then
-                for _, m in ipairs(f:GetChildren()) do push(m) end
+                for _, m in ipairs(f:GetDescendants()) do
+                    if m:IsA("Model") then push(m) end
+                end
             end
         end)
         pcall(function()
@@ -17379,6 +17383,23 @@ end }
             if target and not nexusNpcRaidAlive(target) then
                 target = nil
                 NEXUS_NPC_RAID_TARGET = nil
+            end
+
+            -- A locked target is valid only while it is still one of the
+            -- currently detected raid-objective NPCs. This prevents a dead
+            -- objective slot from turning into an unrelated nearby mob.
+            if target then
+                local stillObjective = false
+                for _, m in ipairs(adds) do
+                    if m == target then
+                        stillObjective = true
+                        break
+                    end
+                end
+                if not stillObjective then
+                    target = nil
+                    NEXUS_NPC_RAID_TARGET = nil
+                end
             end
 
             if not target then
