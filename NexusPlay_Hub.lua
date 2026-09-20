@@ -17089,13 +17089,16 @@ end }
     end)
 
     -- ===== [NEXUSPLAY] NPC Raid Boss Automation =====
-    -- Entry, room creation, raid selection, and difficulty are intentionally
-    -- manual. This feature only activates after the player is already inside
-    -- the Raids place and a selected NPC raid boss is present.
+    -- Entry, room creation, raid selection, and difficulty stay manual.
+    -- This feature only handles the boss fight and retry cycle after the
+    -- player is already inside the Raids place.
     NEXUS_NPC_RAID_ON = NEXUS_NPC_RAID_ON or false
     NEXUS_NPC_RAID_SESSION = NEXUS_NPC_RAID_SESSION or 0
     NEXUS_NPC_RAID_SELECTED = S("NpcRaid", "Strongest of Today")
     NEXUS_NPC_RAID_ACTIVE = false
+    NEXUS_NPC_RAID_SAW_BOSS = false
+    NEXUS_NPC_RAID_RETRY_AT = 0
+    NEXUS_NPC_RAID_LAST_BOSS = nil
 
     NEXUS_NPC_RAIDS = {
         "Strongest of Today",
@@ -17106,31 +17109,160 @@ end }
     }
 
     local NEXUS_NPC_RAID_CFG = {
-        ["Strongest of Today"] = { tags = { "the honored one", "gojo" } },
-        ["Awakened Blood User"] = { tags = { "choso", "blood" } },
-        ["Disaster Flame Curse"] = { tags = { "jogo", "disaster flame" } },
-        ["Jujutsu Sorcerer"] = { tags = { "sorcerer killer", "toji" } },
-        ["Awakened Star"] = { tags = { "yuki", "awakened star" } },
+        ["Strongest of Today"] = {
+            tags = { "the honored one", "gojo", "strongest of today" },
+            ids = { "gojo", "honored" },
+        },
+        ["Awakened Blood User"] = {
+            tags = { "choso", "blood", "awakened blood user" },
+            ids = { "choso", "blood" },
+        },
+        ["Disaster Flame Curse"] = {
+            tags = { "jogo", "disaster flame", "flame curse" },
+            ids = { "jogo", "flame" },
+        },
+        ["Jujutsu Sorcerer"] = {
+            tags = { "sorcerer killer", "toji", "jujutsu sorcerer" },
+            ids = { "toji", "sorcerer killer" },
+        },
+        ["Awakened Star"] = {
+            tags = { "yuki", "awakened star", "star" },
+            ids = { "yuki", "awakened star" },
+        },
     }
+
+    local function nexusNpcRaidAlive(m)
+        if not m or not m.Parent then return false end
+        local hum = m:FindFirstChildOfClass("Humanoid")
+        local h = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+        return hum and hum.Health > 0 and h ~= nil
+    end
+
+    local function nexusNpcRaidMatchesModel(m, cfg)
+        if not m or not cfg then return false end
+        local hay = string.lower(tostring(m.Name or ""))
+        local labels = {}
+        pcall(function()
+            for _, d in ipairs(m:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    labels[#labels + 1] = string.lower(tostring(d.Text or ""))
+                end
+            end
+        end)
+        for _, s in ipairs(cfg.tags or {}) do
+            local low = string.lower(tostring(s))
+            if low ~= "" and string.find(hay, low, 1, true) then return true end
+            for _, t in ipairs(labels) do
+                if string.find(t, low, 1, true) then return true end
+            end
+        end
+        for _, s in ipairs(cfg.ids or {}) do
+            local low = string.lower(tostring(s))
+            if low ~= "" and string.find(hay, low, 1, true) then return true end
+        end
+        return false
+    end
 
     local function nexusNpcRaidFindBoss()
         local cfg = NEXUS_NPC_RAID_CFG[NEXUS_NPC_RAID_SELECTED]
         if not cfg then return nil, nil end
-        local boss, root = findNearestTaggedBoss(cfg.tags)
-        if boss and root then return boss, root end
-        return nil, nil
+
+        -- First use the raid controller when it exposes the active boss.
+        local controller
+        pcall(function()
+            controller = require(LocalPlayer.PlayerScripts.Client.Controllers.RaidController)
+        end)
+        local rb = controller and controller.RaidBoss
+        local serverModel = rb and rb.ServerModel
+        if nexusNpcRaidAlive(serverModel) then
+            return serverModel, (serverModel:FindFirstChild("HumanoidRootPart") or serverModel.PrimaryPart)
+        end
+
+        local my = getModel and getModel() or nil
+        local myRoot = my and my:FindFirstChild("HumanoidRootPart")
+        local best, bestRoot, bestDist
+
+        local folders = {}
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Server
+                and workspace.Characters.Server.NPCs
+            if f then folders[#folders + 1] = f end
+        end)
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Client
+            if f then folders[#folders + 1] = f end
+        end)
+
+        for _, folder in ipairs(folders) do
+            for _, m in ipairs(folder:GetChildren()) do
+                if m:IsA("Model") and nexusNpcRaidAlive(m)
+                    and nexusNpcRaidMatchesModel(m, cfg) then
+                    local h = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+                    local d = myRoot and (h.Position - myRoot.Position).Magnitude or 0
+                    if not bestDist or d < bestDist then
+                        best, bestRoot, bestDist = m, h, d
+                    end
+                end
+            end
+        end
+
+        -- Existing client-label resolver remains as a final fallback.
+        if not best then
+            local ok, b, h = pcall(function()
+                return findNearestTaggedBoss(cfg.tags)
+            end)
+            if ok and b and h then return b, h end
+        end
+
+        return best, bestRoot
+    end
+
+    local function nexusNpcRaidClickResultPopups()
+        pcall(function()
+            clickPopup("claim")
+            clickPopup("next")
+            clickPopup("close")
+        end)
+    end
+
+    local function nexusNpcRaidRetry()
+        local now = os.clock()
+        if now < (NEXUS_NPC_RAID_RETRY_AT or 0) then return false end
+        NEXUS_NPC_RAID_RETRY_AT = now + 1.5
+
+        nexusNpcRaidClickResultPopups()
+        local ok = false
+        pcall(function()
+            if RetrySignal then
+                RetrySignal:InvokeServer()
+                ok = true
+            end
+        end)
+
+        NEXUS_NPC_RAID_SAW_BOSS = false
+        NEXUS_NPC_RAID_LAST_BOSS = nil
+        return ok
     end
 
     local function nexusNpcRaidCombat()
         if not nexusInRaidServer() then
             NEXUS_NPC_RAID_ACTIVE = false
+            NEXUS_NPC_RAID_SAW_BOSS = false
             return false
         end
 
         NEXUS_NPC_RAID_ACTIVE = true
 
         local boss, bh = nexusNpcRaidFindBoss()
-        if not boss or not bh then return false end
+        if not boss or not bh then
+            if NEXUS_NPC_RAID_SAW_BOSS then
+                nexusNpcRaidRetry()
+            end
+            return false
+        end
+
+        NEXUS_NPC_RAID_SAW_BOSS = true
+        NEXUS_NPC_RAID_LAST_BOSS = boss
 
         local cur = getModel and getModel() or nil
         local chrp = cur and cur:FindFirstChild("HumanoidRootPart")
@@ -17156,10 +17288,11 @@ end }
         NEXUS_NPC_RAID_ON = on and true or false
         NEXUS_NPC_RAID_SESSION = NEXUS_NPC_RAID_SESSION + 1
         NEXUS_NPC_RAID_ACTIVE = false
+        NEXUS_NPC_RAID_SAW_BOSS = false
+        NEXUS_NPC_RAID_RETRY_AT = 0
+        NEXUS_NPC_RAID_LAST_BOSS = nil
 
-        if not NEXUS_NPC_RAID_ON then
-            return
-        end
+        if not NEXUS_NPC_RAID_ON then return end
 
         local runId = NEXUS_NPC_RAID_SESSION
         task.spawn(function()
@@ -17167,19 +17300,21 @@ end }
                 and NEXUS_NPC_RAID_ON
                 and NEXUS_NPC_RAID_SESSION == runId do
 
-                -- Manual entry only. Do nothing outside the Raids place.
+                -- Manual entry only. The automation does not create or enter rooms.
                 if nexusInRaidServer() then
                     NEXUS_NPC_RAID_ACTIVE = true
                     nexusNpcRaidCombat()
                     task.wait(0.05)
                 else
                     NEXUS_NPC_RAID_ACTIVE = false
+                    NEXUS_NPC_RAID_SAW_BOSS = false
                     task.wait(0.5)
                 end
             end
         end)
     end
     -- ===== [/NEXUSPLAY] NPC Raid Boss Automation =====
+
 
 
     RaidTab:CreateSection("NPC Raid Boss")
