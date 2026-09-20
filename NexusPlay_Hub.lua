@@ -17097,6 +17097,7 @@ end }
     NEXUS_NPC_RAID_SAW_BOSS = false
     NEXUS_NPC_RAID_RETRY_AT = 0
     NEXUS_NPC_RAID_LAST_BOSS = nil
+    NEXUS_NPC_RAID_TARGET = nil
     NEXUS_NPC_RAID_PHASE = "idle"
 
     NEXUS_NPC_RAIDS = {
@@ -17355,39 +17356,64 @@ end }
         if nexusNpcRaidHollowPurpleActive() then
             local killed, total = nexusNpcRaidQuota()
             local adds = nexusNpcRaidObjectiveModels(boss)
-            if #adds > 0 then
+
+            -- Lock onto one objective NPC. Do not recalculate/teleport every tick.
+            -- Once we are close enough, stay there and let the attack loop work.
+            local target = NEXUS_NPC_RAID_TARGET
+            if target and not nexusNpcRaidAlive(target) then
+                target = nil
+                NEXUS_NPC_RAID_TARGET = nil
+            end
+
+            if not target then
+                target = sorcNearest(adds, chrp.Position)
+                NEXUS_NPC_RAID_TARGET = target
+            end
+
+            if target then
                 NEXUS_NPC_RAID_PHASE = "Hollow Purple"
                     .. (killed and total and (" " .. killed .. "/" .. total) or "")
-                if BringRaidNpcOn then
-                    for _, m in ipairs(adds) do
-                        local h = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
-                        if h then
-                            pcall(function()
-                                h.AssemblyLinearVelocity = Vector3.zero
-                                NexusBringPlace(h, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0))
-                            end)
-                        end
-                    end
-                    NexusQ(NexusBringPump, adds, cur, chrp)
-                else
-                    local target = sorcNearest(adds, chrp.Position)
-                    local th = target and (target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart)
-                    if th then
+
+                local th = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
+                if th then
+                    local dist = (th.Position - chrp.Position).Magnitude
+
+                    if BringRaidNpcOn then
+                        pcall(function()
+                            th.AssemblyLinearVelocity = Vector3.zero
+                            NexusBringPlace(th, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0))
+                        end)
+                    elseif dist > 10 then
                         pcall(function()
                             chrp.AssemblyLinearVelocity = Vector3.zero
+                            chrp.AssemblyAngularVelocity = Vector3.zero
                             chrp.CFrame = auraGoal(th)
+                        end)
+                    else
+                        -- Already at the objective: stop teleporting.
+                        pcall(function()
+                            chrp.AssemblyLinearVelocity = Vector3.zero
+                            chrp.AssemblyAngularVelocity = Vector3.zero
                         end)
                     end
                 end
+
                 enableBlackFlash()
-                NexusQ(pcall, blackFlashList, adds, cur, chrp)
-                NexusQ(pcall, attackList, adds, cur, chrp)
+                NexusQ(pcall, blackFlashList, { target }, cur, chrp)
+                NexusQ(pcall, attackList, { target }, cur, chrp)
                 return true
             end
+
+            -- No objective NPC is visible yet. Stay put instead of going back to boss.
             NEXUS_NPC_RAID_PHASE = "Hollow Purple waiting for NPCs"
-            task.wait(0.1)
+            pcall(function()
+                chrp.AssemblyLinearVelocity = Vector3.zero
+                chrp.AssemblyAngularVelocity = Vector3.zero
+            end)
             return true
         end
+
+        NEXUS_NPC_RAID_TARGET = nil
 
         NEXUS_NPC_RAID_PHASE = "Boss"
         pcall(function()
@@ -17412,6 +17438,7 @@ end }
         NEXUS_NPC_RAID_SAW_BOSS = false
         NEXUS_NPC_RAID_RETRY_AT = 0
         NEXUS_NPC_RAID_LAST_BOSS = nil
+        NEXUS_NPC_RAID_TARGET = nil
         NEXUS_NPC_RAID_PHASE = on and "starting" or "idle"
 
         if not NEXUS_NPC_RAID_ON then return end
