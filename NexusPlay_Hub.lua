@@ -17088,6 +17088,265 @@ end }
         end
     end)
 
+    -- ===== [NEXUSPLAY] NPC Raid Automation =====
+    NEXUS_NPC_RAID_ON = NEXUS_NPC_RAID_ON or false
+    NEXUS_NPC_RAID_SESSION = NEXUS_NPC_RAID_SESSION or 0
+    NEXUS_NPC_RAID_SELECTED = S("NpcRaid", "Strongest of Today")
+    NEXUS_NPC_RAID_DIFF = S("NpcRaidDifficulty", "Calamity")
+    NEXUS_NPC_RAID_ACTIVE = false
+    NEXUS_NPC_RAID_LAST_PROMPT = nil
+    NEXUS_NPC_RAID_NEXT = 0
+
+    NEXUS_NPC_RAIDS = {
+        "Strongest of Today",
+        "Awakened Blood User",
+        "Disaster Flame Curse",
+        "Jujutsu Sorcerer",
+        "Awakened Star",
+    }
+
+    local NEXUS_NPC_RAID_CFG = {
+        ["Strongest of Today"] = {
+            tags = { "the honored one", "gojo" },
+            npc = { "raid", "raids" },
+        },
+        ["Awakened Blood User"] = {
+            tags = { "choso", "blood" },
+            npc = { "raid", "raids" },
+        },
+        ["Disaster Flame Curse"] = {
+            tags = { "jogo", "disaster flame" },
+            npc = { "raid", "raids" },
+        },
+        ["Jujutsu Sorcerer"] = {
+            tags = { "sorcerer killer", "toji" },
+            npc = { "raid", "raids" },
+        },
+        ["Awakened Star"] = {
+            tags = { "yuki", "awakened star" },
+            npc = { "raid", "raids" },
+        },
+    }
+
+    local function nexusNpcRaidUiTexts()
+        local out = {}
+        local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+        if not pg then return out end
+        pcall(function()
+            for _, d in ipairs(pg:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    local t = tostring(d.Text or "")
+                    if t ~= "" then out[#out + 1] = { obj = d, text = t } end
+                end
+            end
+        end)
+        return out
+    end
+
+    local function nexusNpcRaidHasText(patterns)
+        local list = nexusNpcRaidUiTexts()
+        for _, v in ipairs(list) do
+            local low = string.lower(v.text)
+            for _, p in ipairs(patterns) do
+                if string.find(low, string.lower(p), 1, true) then return true end
+            end
+        end
+        return false
+    end
+
+    local function nexusNpcRaidClick(patterns)
+        local list = nexusNpcRaidUiTexts()
+        for _, v in ipairs(list) do
+            local b = v.obj
+            if b:IsA("TextButton") and b.Visible then
+                local low = string.lower(v.text)
+                for _, p in ipairs(patterns) do
+                    if string.find(low, string.lower(p), 1, true) then
+                        local ok = pcall(function() b:Activate() end)
+                        if ok then return true end
+                    end
+                end
+            end
+        end
+        return false
+    end
+
+    local function nexusNpcRaidFindPrompt()
+        local best, bestDist = nil, math.huge
+        local my = getModel and getModel() or nil
+        local root = my and my:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+
+        pcall(function()
+            for _, d in ipairs(workspace:GetDescendants()) do
+                if d:IsA("ProximityPrompt") and d.Enabled then
+                    local txt = string.lower(tostring(d.ActionText or "") .. " " .. tostring(d.ObjectText or ""))
+                    if string.find(txt, "raid", 1, true) then
+                        local holder = d.Parent
+                        local part = holder and (holder:IsA("BasePart") and holder or holder:FindFirstChildWhichIsA("BasePart", true))
+                        if part then
+                            local dist = (part.Position - root.Position).Magnitude
+                            if dist < bestDist then
+                                best, bestDist = d, dist
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        return best
+    end
+
+    local function nexusNpcRaidStartSelected()
+        local wanted = string.lower(NEXUS_NPC_RAID_SELECTED)
+        if not nexusNpcRaidHasText({ "select raid" }) then return false end
+
+        -- The NPC menu uses the raid's display name as a TextButton.
+        if not nexusNpcRaidClick({ wanted }) then
+            -- Fallback for common shortened display names.
+            local aliases = {
+                ["strongest of today"] = { "strongest" },
+                ["awakened blood user"] = { "blood" },
+                ["disaster flame curse"] = { "flame" },
+                ["jujutsu sorcerer"] = { "sorcerer" },
+                ["awakened star"] = { "star" },
+            }
+            local a = aliases[wanted]
+            if not a or not nexusNpcRaidClick(a) then return false end
+        end
+
+        task.wait(0.2)
+
+        -- Difficulty buttons are visible on the same menu. Click the exact
+        -- requested difficulty when it is exposed by the current UI.
+        nexusNpcRaidClick({ string.lower(NEXUS_NPC_RAID_DIFF) })
+        task.wait(0.15)
+
+        if nexusNpcRaidClick({ "start" }) then
+            NEXUS_NPC_RAID_ACTIVE = true
+            return true
+        end
+        return false
+    end
+
+    local function nexusNpcRaidInteract()
+        local pr = nexusNpcRaidFindPrompt()
+        if not pr then return false end
+
+        local holder = pr.Parent
+        local part = holder and (holder:IsA("BasePart") and holder or holder:FindFirstChildWhichIsA("BasePart", true))
+        if part then
+            local pos = part.Position + Vector3.new(0, 4, 0)
+            pcall(function()
+                nexusTpTo(pos)
+            end)
+            task.wait(0.35)
+        end
+
+        return nexusFirePrompt(pr)
+    end
+
+    local function nexusNpcRaidFindBoss()
+        local cfg = NEXUS_NPC_RAID_CFG[NEXUS_NPC_RAID_SELECTED]
+        if not cfg then return nil, nil end
+        local boss, root = findNearestTaggedBoss(cfg.tags)
+        if boss and root then return boss, root end
+        return nil, nil
+    end
+
+    local function nexusNpcRaidCombat()
+        local boss, bh = nexusNpcRaidFindBoss()
+        if not boss or not bh then return false end
+
+        local cur = getModel and getModel() or nil
+        local chrp = cur and cur:FindFirstChild("HumanoidRootPart")
+        if not chrp then return true end
+
+        pcall(function()
+            chrp.AssemblyLinearVelocity = Vector3.zero
+            if BringRaidNpcOn then
+                bh.AssemblyLinearVelocity = Vector3.zero
+                NexusBringPlace(bh, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0))
+            else
+                chrp.CFrame = auraGoal(bh)
+            end
+        end)
+
+        enableBlackFlash()
+        NexusQ(pcall, blackFlashList, { boss }, cur, chrp)
+        NexusQ(pcall, attackList, { boss }, cur, chrp)
+        return true
+    end
+
+    function NexusSetNpcRaid(on)
+        NEXUS_NPC_RAID_ON = on and true or false
+        NEXUS_NPC_RAID_SESSION = NEXUS_NPC_RAID_SESSION + 1
+        NEXUS_NPC_RAID_ACTIVE = false
+
+        if not NEXUS_NPC_RAID_ON then
+            return
+        end
+
+        local runId = NEXUS_NPC_RAID_SESSION
+        task.spawn(function()
+            while NEXUSG.NexusPlayHubSession == SESSION
+                and NEXUS_NPC_RAID_ON
+                and NEXUS_NPC_RAID_SESSION == runId do
+
+                if nexusNpcRaidHasText({ "select raid" }) then
+                    nexusNpcRaidStartSelected()
+                    task.wait(0.5)
+
+                elseif nexusNpcRaidHasText({ "raid summary", "complete", "victory", "defeat" }) then
+                    nexusNpcRaidClick({ "next", "close", "back" })
+                    NEXUS_NPC_RAID_ACTIVE = false
+                    task.wait(0.75)
+
+                elseif NEXUS_NPC_RAID_ACTIVE then
+                    if not nexusNpcRaidCombat() then
+                        -- The raid may be between waves/loading. Do not queue an
+                        -- Overlord/overworld raid here. Just wait for the NPC raid.
+                        task.wait(0.2)
+                    else
+                        task.wait(0.05)
+                    end
+
+                else
+                    local started = nexusNpcRaidInteract()
+                    if not started then task.wait(0.5) end
+                end
+            end
+        end)
+    end
+    -- ===== [/NEXUSPLAY] NPC Raid Automation =====
+
+    RaidTab:CreateSection("NPC Raid")
+    RaidTab:CreateDropdown({
+        Name = "Select NPC Raid",
+        Options = NEXUS_NPC_RAIDS,
+        CurrentOption = { NEXUS_NPC_RAID_SELECTED },
+        MultipleOptions = false,
+        Callback = function(choice)
+            NEXUS_NPC_RAID_SELECTED = (type(choice) == "table" and choice[1]) or choice
+            Settings["NpcRaid"] = NEXUS_NPC_RAID_SELECTED
+            saveSettings()
+        end,
+    })
+    RaidTab:CreateDropdown({
+        Name = "NPC Raid Difficulty",
+        Options = { "Easy", "Normal", "Hard", "Nightmare", "Calamity" },
+        CurrentOption = { NEXUS_NPC_RAID_DIFF },
+        MultipleOptions = false,
+        Callback = function(choice)
+            NEXUS_NPC_RAID_DIFF = (type(choice) == "table" and choice[1]) or choice
+            Settings["NpcRaidDifficulty"] = NEXUS_NPC_RAID_DIFF
+            saveSettings()
+        end,
+    })
+    PT(RaidTab, "NpcRaidOn", "Auto NPC Raid", function(on)
+        NexusSetNpcRaid(on)
+    end)
+
     RaidTab:CreateSection("Overlord Raid")
     NexusRaidNames = { "Star Rage Raid", "Blood Raid", "Lightning God Raid", "Cursed Prodigy Raid", "Deadly Judge Raid", "Jogo Raid", "Sorcerer Killer Raid", "King of Curses Raid", "Awakened Toji Raid", "Maki Raid", "Curse Calamity Raid", "The Honored One Raid" }
     SelectedRaid = S("SelectedRaid", "Star Rage Raid")
