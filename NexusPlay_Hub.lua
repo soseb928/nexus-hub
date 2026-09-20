@@ -17198,15 +17198,30 @@ end }
                     for _, d in ipairs(g:GetDescendants()) do
                         if d:IsA("TextLabel") or d:IsA("TextButton") then
                             local t = tostring(d.Text or "")
+                            local low = string.lower(t)
+
+                            -- Hollow Purple timer and NPC quota are displayed in separate UI labels.
+                            -- Example:
+                            --   "Hollow Purple (00:30)"
+                            --   "Defeat PLACEHOLDER.NPCs (0/6)"
                             local a, b = string.match(t, "Hollow%s+Purple.-%((%d+)%s*/%s*(%d+)%)")
                             if a and b then
                                 killed, total = tonumber(a), tonumber(b)
                                 return
                             end
+
                             local c, e = string.match(t, "Defeat.-%((%d+)%s*/%s*(%d+)%)")
-                            if c and e and string.find(string.lower(t), "hollow purple", 1, true) then
+                            if c and e then
                                 killed, total = tonumber(c), tonumber(e)
                                 return
+                            end
+
+                            if string.find(low, "hollow purple", 1, true) then
+                                local x, y = string.match(t, "%((%d+)%s*/%s*(%d+)%)")
+                                if x and y then
+                                    killed, total = tonumber(x), tonumber(y)
+                                    return
+                                end
                             end
                         end
                     end
@@ -17218,9 +17233,13 @@ end }
 
     local function nexusNpcRaidHollowPurpleActive()
         if NEXUS_NPC_RAID_SELECTED ~= "Strongest of Today" then return false end
-        local killed, total = nexusNpcRaidQuota()
-        if killed and total then return killed < total end
 
+        local killed, total = nexusNpcRaidQuota()
+        if killed and total then
+            return killed < total
+        end
+
+        -- The game can show the objective title and the quota in different labels.
         local active = false
         pcall(function()
             local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
