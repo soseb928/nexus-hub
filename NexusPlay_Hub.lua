@@ -17089,12 +17089,16 @@ end }
     end)
 
     -- ===== [NEXUSPLAY] NPC Raid Boss Automation =====
-    -- Safe placeholder. The combat implementation is disabled while the hub
-    -- parser is being stabilized. UI remains independent of this feature.
+    -- Rebuilt as an isolated state machine. Entry/room creation remains manual.
     NEXUS_NPC_RAID_ON = NEXUS_NPC_RAID_ON or false
     NEXUS_NPC_RAID_SESSION = NEXUS_NPC_RAID_SESSION or 0
     NEXUS_NPC_RAID_SELECTED = S("NpcRaid", "Strongest of Today")
     NEXUS_NPC_RAID_ACTIVE = false
+    NEXUS_NPC_RAID_SAW_BOSS = false
+    NEXUS_NPC_RAID_RETRY_AT = 0
+    NEXUS_NPC_RAID_LAST_BOSS = nil
+    NEXUS_NPC_RAID_PHASE = "idle"
+
     NEXUS_NPC_RAIDS = {
         "Strongest of Today",
         "Awakened Blood User",
@@ -17103,10 +17107,305 @@ end }
         "Awakened Star",
     }
 
+    local NEXUS_NPC_RAID_CFG = {
+        ["Strongest of Today"] = { tags = { "the honored one", "gojo", "strongest of today" } },
+        ["Awakened Blood User"] = { tags = { "choso", "blood", "awakened blood user" } },
+        ["Disaster Flame Curse"] = { tags = { "jogo", "disaster flame", "flame curse" } },
+        ["Jujutsu Sorcerer"] = { tags = { "sorcerer killer", "toji", "jujutsu sorcerer" } },
+        ["Awakened Star"] = { tags = { "yuki", "awakened star", "star" } },
+    }
+
+    local function nexusNpcRaidAlive(m)
+        if not m or not m.Parent then return false end
+        local hum = m:FindFirstChildOfClass("Humanoid")
+        local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+        return hum ~= nil and hum.Health > 0 and root ~= nil
+    end
+
+    local function nexusNpcRaidText(m)
+        local out = string.lower(tostring(m and m.Name or ""))
+        pcall(function()
+            for _, d in ipairs(m:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    out = out .. " " .. string.lower(tostring(d.Text or ""))
+                end
+            end
+        end)
+        return out
+    end
+
+    local function nexusNpcRaidFindBoss()
+        local cfg = NEXUS_NPC_RAID_CFG[NEXUS_NPC_RAID_SELECTED]
+        if not cfg then return nil, nil end
+
+        local controller
+        pcall(function()
+            controller = require(LocalPlayer.PlayerScripts.Client.Controllers.RaidController)
+        end)
+
+        local rb = controller and controller.RaidBoss
+        local model = rb and rb.ServerModel
+        if nexusNpcRaidAlive(model) then
+            local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+            return model, root
+        end
+
+        local me = getModel and getModel() or nil
+        local myRoot = me and me:FindFirstChild("HumanoidRootPart")
+        local best, bestRoot, bestDist
+
+        local folders = {}
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Server and workspace.Characters.Server.NPCs
+            if f then folders[#folders + 1] = f end
+        end)
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Client
+            if f then folders[#folders + 1] = f end
+        end)
+
+        for _, folder in ipairs(folders) do
+            for _, m in ipairs(folder:GetChildren()) do
+                if m:IsA("Model") and nexusNpcRaidAlive(m) then
+                    local hay = nexusNpcRaidText(m)
+                    local matched = false
+                    for _, tag in ipairs(cfg.tags) do
+                        if string.find(hay, string.lower(tag), 1, true) then
+                            matched = true
+                            break
+                        end
+                    end
+                    if matched then
+                        local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+                        local dist = myRoot and (root.Position - myRoot.Position).Magnitude or 0
+                        if not bestDist or dist < bestDist then
+                            best, bestRoot, bestDist = m, root, dist
+                        end
+                    end
+                end
+            end
+        end
+        return best, bestRoot
+    end
+
+    local function nexusNpcRaidQuota()
+        local killed, total
+        pcall(function()
+            local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return end
+            for _, g in ipairs(pg:GetChildren()) do
+                if g.Name ~= "NexusPlayHub" then
+                    for _, d in ipairs(g:GetDescendants()) do
+                        if d:IsA("TextLabel") or d:IsA("TextButton") then
+                            local t = tostring(d.Text or "")
+                            local a, b = string.match(t, "Hollow%s+Purple.-%((%d+)%s*/%s*(%d+)%)")
+                            if a and b then
+                                killed, total = tonumber(a), tonumber(b)
+                                return
+                            end
+                            local c, e = string.match(t, "Defeat.-%((%d+)%s*/%s*(%d+)%)")
+                            if c and e and string.find(string.lower(t), "hollow purple", 1, true) then
+                                killed, total = tonumber(c), tonumber(e)
+                                return
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        return killed, total
+    end
+
+    local function nexusNpcRaidHollowPurpleActive()
+        if NEXUS_NPC_RAID_SELECTED ~= "Strongest of Today" then return false end
+        local killed, total = nexusNpcRaidQuota()
+        if killed and total then return killed < total end
+
+        local active = false
+        pcall(function()
+            local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return end
+            for _, g in ipairs(pg:GetChildren()) do
+                if g.Name ~= "NexusPlayHub" then
+                    for _, d in ipairs(g:GetDescendants()) do
+                        if (d:IsA("TextLabel") or d:IsA("TextButton"))
+                            and string.find(string.lower(tostring(d.Text or "")), "hollow purple", 1, true) then
+                            active = true
+                            return
+                        end
+                    end
+                end
+            end
+        end)
+        return active
+    end
+
+    local function nexusNpcRaidObjectiveModels(boss)
+        local out, seen = {}, {}
+        local bossRoot = boss and (boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart)
+        local me = getModel and getModel() or nil
+        local myRoot = me and me:FindFirstChild("HumanoidRootPart")
+
+        local function push(m)
+            if not m or m == boss or seen[m] or not nexusValidNpc(m) then return end
+            if nexusIsPlayerModel(m) or nexusIsPetModel(m) then return end
+            local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+            if not root then return end
+            if bossRoot and (root.Position - bossRoot.Position).Magnitude > RAID_ISLAND_RADIUS then return end
+            if myRoot and not onMyIsland(root.Position) then return end
+            seen[m] = true
+            out[#out + 1] = m
+        end
+
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Server and workspace.Characters.Server.NPCs
+            if f then
+                for _, m in ipairs(f:GetChildren()) do push(m) end
+            end
+        end)
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Client
+            if f then
+                for _, m in ipairs(f:GetChildren()) do push(m) end
+            end
+        end)
+        pcall(function()
+            for _, e in ipairs(sorcLiveAIs()) do push(e.model) end
+        end)
+
+        table.sort(out, function(a, b)
+            local ar = a:FindFirstChild("HumanoidRootPart") or a.PrimaryPart
+            local br = b:FindFirstChild("HumanoidRootPart") or b.PrimaryPart
+            if not ar or not br then return false end
+            local ap = bossRoot and (ar.Position - bossRoot.Position).Magnitude or 0
+            local bp = bossRoot and (br.Position - bossRoot.Position).Magnitude or 0
+            return ap < bp
+        end)
+        return out
+    end
+
+    local function nexusNpcRaidRetry()
+        local now = os.clock()
+        if now < (NEXUS_NPC_RAID_RETRY_AT or 0) then return false end
+        NEXUS_NPC_RAID_RETRY_AT = now + 1.5
+
+        pcall(function()
+            clickPopup("claim")
+            clickPopup("next")
+            clickPopup("close")
+        end)
+
+        local ok = false
+        pcall(function()
+            if RetrySignal then
+                RetrySignal:InvokeServer()
+                ok = true
+            end
+        end)
+
+        NEXUS_NPC_RAID_SAW_BOSS = false
+        NEXUS_NPC_RAID_LAST_BOSS = nil
+        NEXUS_NPC_RAID_PHASE = "retry"
+        return ok
+    end
+
+    local function nexusNpcRaidCombat()
+        if not nexusInRaidServer() then
+            NEXUS_NPC_RAID_ACTIVE = false
+            NEXUS_NPC_RAID_SAW_BOSS = false
+            NEXUS_NPC_RAID_PHASE = "outside raid"
+            return false
+        end
+
+        NEXUS_NPC_RAID_ACTIVE = true
+        local boss, bh = nexusNpcRaidFindBoss()
+
+        if not boss or not bh then
+            NEXUS_NPC_RAID_PHASE = NEXUS_NPC_RAID_SAW_BOSS and "waiting for retry" or "waiting for boss"
+            if NEXUS_NPC_RAID_SAW_BOSS then nexusNpcRaidRetry() end
+            return false
+        end
+
+        NEXUS_NPC_RAID_SAW_BOSS = true
+        NEXUS_NPC_RAID_LAST_BOSS = boss
+
+        local cur = getModel and getModel() or nil
+        local chrp = cur and cur:FindFirstChild("HumanoidRootPart")
+        if not chrp then return true end
+
+        if nexusNpcRaidHollowPurpleActive() then
+            local killed, total = nexusNpcRaidQuota()
+            local adds = nexusNpcRaidObjectiveModels(boss)
+            if #adds > 0 then
+                NEXUS_NPC_RAID_PHASE = "Hollow Purple"
+                    .. (killed and total and (" " .. killed .. "/" .. total) or "")
+                if BringRaidNpcOn then
+                    for _, m in ipairs(adds) do
+                        local h = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+                        if h then
+                            pcall(function()
+                                h.AssemblyLinearVelocity = Vector3.zero
+                                NexusBringPlace(h, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0))
+                            end)
+                        end
+                    end
+                    NexusQ(NexusBringPump, adds, cur, chrp)
+                else
+                    local target = sorcNearest(adds, chrp.Position)
+                    local th = target and (target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart)
+                    if th then
+                        pcall(function()
+                            chrp.AssemblyLinearVelocity = Vector3.zero
+                            chrp.CFrame = auraGoal(th)
+                        end)
+                    end
+                end
+                enableBlackFlash()
+                NexusQ(pcall, blackFlashList, adds, cur, chrp)
+                NexusQ(pcall, attackList, adds, cur, chrp)
+                return true
+            end
+            NEXUS_NPC_RAID_PHASE = "Hollow Purple waiting for NPCs"
+            task.wait(0.1)
+            return true
+        end
+
+        NEXUS_NPC_RAID_PHASE = "Boss"
+        pcall(function()
+            chrp.AssemblyLinearVelocity = Vector3.zero
+            if BringRaidNpcOn then
+                bh.AssemblyLinearVelocity = Vector3.zero
+                NexusBringPlace(bh, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0))
+            else
+                chrp.CFrame = auraGoal(bh)
+            end
+        end)
+        enableBlackFlash()
+        NexusQ(pcall, blackFlashList, { boss }, cur, chrp)
+        NexusQ(pcall, attackList, { boss }, cur, chrp)
+        return true
+    end
+
     function NexusSetNpcRaid(on)
         NEXUS_NPC_RAID_ON = on and true or false
         NEXUS_NPC_RAID_SESSION = NEXUS_NPC_RAID_SESSION + 1
         NEXUS_NPC_RAID_ACTIVE = false
+        NEXUS_NPC_RAID_SAW_BOSS = false
+        NEXUS_NPC_RAID_RETRY_AT = 0
+        NEXUS_NPC_RAID_LAST_BOSS = nil
+        NEXUS_NPC_RAID_PHASE = on and "starting" or "idle"
+
+        if not NEXUS_NPC_RAID_ON then return end
+
+        local runId = NEXUS_NPC_RAID_SESSION
+        task.spawn(function()
+            while NEXUSG.NexusPlayHubSession == SESSION
+                and NEXUS_NPC_RAID_ON
+                and NEXUS_NPC_RAID_SESSION == runId do
+                pcall(nexusNpcRaidCombat)
+                task.wait(nexusInRaidServer() and 0.08 or 0.5)
+            end
+        end)
     end
     -- ===== [/NEXUSPLAY] NPC Raid Boss Automation =====
 
