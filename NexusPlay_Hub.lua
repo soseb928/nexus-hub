@@ -17244,6 +17244,51 @@ end }
         return ok
     end
 
+    local function nexusNpcRaidHollowPurpleActive()
+        if NEXUS_NPC_RAID_SELECTED ~= "Strongest of Today" then return false end
+        local hit = false
+        pcall(function()
+            local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+            if not pg then return end
+            for _, g in ipairs(pg:GetChildren()) do
+                if g.Name ~= "NexusPlayHub" then
+                    for _, d in ipairs(g:GetDescendants()) do
+                        if d:IsA("TextLabel") or d:IsA("TextButton") then
+                            local t = string.lower(tostring(d.Text or ""))
+                            if string.find(t, "hollow purple", 1, true) then hit = true return end
+                        end
+                    end
+                end
+            end
+        end)
+        return hit
+    end
+
+    local function nexusNpcRaidHollowPurpleAdds(boss)
+        local out, seen = {}, {}
+        local bossRoot = boss and (boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart)
+        local my = getModel and getModel() or nil
+        local myRoot = my and my:FindFirstChild("HumanoidRootPart")
+        local function push(m)
+            if not m or m == boss or seen[m] or not nexusValidNpc(m) then return end
+            local h = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+            if not h then return end
+            if bossRoot and (h.Position - bossRoot.Position).Magnitude > RAID_ISLAND_RADIUS then return end
+            if myRoot and not onMyIsland(h.Position) then return end
+            seen[m] = true
+            out[#out + 1] = m
+        end
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Server and workspace.Characters.Server.NPCs
+            if f then for _, m in ipairs(f:GetChildren()) do push(m) end end
+        end)
+        pcall(function()
+            local f = workspace.Characters and workspace.Characters.Client
+            if f then for _, m in ipairs(f:GetChildren()) do push(m) end end
+        end)
+        pcall(function() for _, e in ipairs(sorcLiveAIs()) do push(e.model) end end)
+        return out
+    end
     local function nexusNpcRaidCombat()
         if not nexusInRaidServer() then
             NEXUS_NPC_RAID_ACTIVE = false
@@ -17255,18 +17300,35 @@ end }
 
         local boss, bh = nexusNpcRaidFindBoss()
         if not boss or not bh then
-            if NEXUS_NPC_RAID_SAW_BOSS then
-                nexusNpcRaidRetry()
-            end
+            if NEXUS_NPC_RAID_SAW_BOSS then nexusNpcRaidRetry() end
             return false
         end
-
         NEXUS_NPC_RAID_SAW_BOSS = true
         NEXUS_NPC_RAID_LAST_BOSS = boss
-
         local cur = getModel and getModel() or nil
         local chrp = cur and cur:FindFirstChild("HumanoidRootPart")
         if not chrp then return true end
+
+        if nexusNpcRaidHollowPurpleActive() then
+            local adds = nexusNpcRaidHollowPurpleAdds(boss)
+            if #adds > 0 then
+                if BringRaidNpcOn then
+                    for _, m in ipairs(adds) do
+                        local h = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+                        if h then pcall(function() h.AssemblyLinearVelocity = Vector3.zero NexusBringPlace(h, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0)) end) end
+                    end
+                    NexusQ(NexusBringPump, adds, cur, chrp)
+                else
+                    local target = sorcNearest(adds, chrp.Position)
+                    local th = target and (target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart)
+                    if th then pcall(function() chrp.AssemblyLinearVelocity = Vector3.zero chrp.CFrame = auraGoal(th) end) end
+                end
+                enableBlackFlash()
+                NexusQ(pcall, blackFlashList, adds, cur, chrp)
+                NexusQ(pcall, attackList, adds, cur, chrp)
+            end
+            return true
+        end
 
         pcall(function()
             chrp.AssemblyLinearVelocity = Vector3.zero
@@ -17277,11 +17339,11 @@ end }
                 chrp.CFrame = auraGoal(bh)
             end
         end)
-
         enableBlackFlash()
         NexusQ(pcall, blackFlashList, { boss }, cur, chrp)
         NexusQ(pcall, attackList, { boss }, cur, chrp)
         return true
+    end
     end
 
     function NexusSetNpcRaid(on)
