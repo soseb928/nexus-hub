@@ -17315,13 +17315,15 @@ end }
                 if BringRaidNpcOn then
                     for _, m in ipairs(adds) do
                         local h = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
-                        if h then pcall(function() h.AssemblyLinearVelocity = Vector3.zero\n                            NexusBringPlace(h, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0)) end) end
+                        if h then pcall(function() h.AssemblyLinearVelocity = Vector3.zero
+                            NexusBringPlace(h, chrp.Position + Vector3.new(BRING_OFFSET, 0, 0)) end) end
                     end
                     NexusQ(NexusBringPump, adds, cur, chrp)
                 else
                     local target = sorcNearest(adds, chrp.Position)
                     local th = target and (target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart)
-                    if th then pcall(function() chrp.AssemblyLinearVelocity = Vector3.zero\n                        chrp.CFrame = auraGoal(th) end) end
+                    if th then pcall(function() chrp.AssemblyLinearVelocity = Vector3.zero
+                        chrp.CFrame = auraGoal(th) end) end
                 end
                 enableBlackFlash()
                 NexusQ(pcall, blackFlashList, adds, cur, chrp)
