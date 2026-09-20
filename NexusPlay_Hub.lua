@@ -17271,8 +17271,24 @@ end }
             if nexusIsPlayerModel(m) or nexusIsPetModel(m) then return end
             local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
             if not root then return end
-            if bossRoot and (root.Position - bossRoot.Position).Magnitude > RAID_ISLAND_RADIUS then return end
-            if myRoot and not onMyIsland(root.Position) then return end
+
+            -- Hollow Purple NPCs are not guaranteed to be parented to the same
+            -- island/model tree as the raid boss. Do not reject them using
+            -- onMyIsland() or boss-radius checks.
+            -- Keep the search local to the player's current raid area and
+            -- explicitly exclude the selected boss.
+            if myRoot and (root.Position - myRoot.Position).Magnitude > 250 then return end
+
+            local text = nexusNpcRaidText(m)
+            local bossCfg = NEXUS_NPC_RAID_CFG[NEXUS_NPC_RAID_SELECTED]
+            if bossCfg then
+                for _, tag in ipairs(bossCfg.tags) do
+                    if string.find(text, string.lower(tag), 1, true) then
+                        return
+                    end
+                end
+            end
+
             seen[m] = true
             out[#out + 1] = m
         end
