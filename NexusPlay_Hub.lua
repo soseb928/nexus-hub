@@ -1306,7 +1306,7 @@ local STICK_OFFSET = 4
 task.spawn(function()
     while NEXUSG.NexusPlayHubSession == SESSION do
         -- NPC Raid owns movement/targeting while Hollow Purple is active.
-        if FastOn and not (NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple") then
+        if FastOn and not (NEXUS_NPC_RAID_ON and string.sub(tostring(NEXUS_NPC_RAID_PHASE or ""), 1, 13) == "Hollow Purple") then
             NexusQ(NexusListJob, attackList)
         end
         task.wait(math.max(NEXUS_LV.TICK, LOOP_GAP))
@@ -1544,7 +1544,7 @@ task.spawn(function()
     while NEXUSG.NexusPlayHubSession == SESSION do
 
         if BlackFlashOn
-            and not (NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple")
+            and not (NEXUS_NPC_RAID_ON and string.sub(tostring(NEXUS_NPC_RAID_PHASE or ""), 1, 13) == "Hollow Purple")
             and NEXUS_LV.globalReady("BlackFlashSkill1") then
             NexusQ(NexusListJob, blackFlashList)
         end
@@ -2315,7 +2315,7 @@ end
  NEXUS_LV.killAuraTarget, NEXUS_LV.killAuraHRP = nil, nil
 CONNS[#CONNS+1] = RunService.Heartbeat:Connect(function(dt)
     if NEXUSG.NexusPlayHubSession ~= SESSION then return end
-    if NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple" then return end
+    if NEXUS_NPC_RAID_ON and string.sub(tostring(NEXUS_NPC_RAID_PHASE or ""), 1, 13) == "Hollow Purple" then return end
     if not NEXUS_LV.KillOn then return end
     if anyBringActive() then return end
     if NEXUS_LV.essenceBusy or NEXUS_LV.crateBusy then return end
@@ -2337,7 +2337,7 @@ end)
 task.spawn(function()
     while NEXUSG.NexusPlayHubSession == SESSION do
 
-        if NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple" then
+        if NEXUS_NPC_RAID_ON and string.sub(tostring(NEXUS_NPC_RAID_PHASE or ""), 1, 13) == "Hollow Purple" then
             NEXUS_LV.killAuraTarget, NEXUS_LV.killAuraHRP = nil, nil
         elseif NEXUS_LV.KillOn and not (anyBringActive and anyBringActive()) then
             local n, mm, hrp = NEXUS_LV.getNearest(NEXUS_LV.AURA_RANGE)
