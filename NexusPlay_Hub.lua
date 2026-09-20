@@ -1305,7 +1305,8 @@ local STICK_OFFSET = 4
 
 task.spawn(function()
     while NEXUSG.NexusPlayHubSession == SESSION do
-        if FastOn then
+        -- NPC Raid owns movement/targeting while Hollow Purple is active.
+        if FastOn and not (NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple") then
             NexusQ(NexusListJob, attackList)
         end
         task.wait(math.max(NEXUS_LV.TICK, LOOP_GAP))
@@ -1542,7 +1543,11 @@ function NexusBFJob(name) NexusBusyT = os.clock() pcall(NexusRunBF, name) end
 task.spawn(function()
     while NEXUSG.NexusPlayHubSession == SESSION do
 
-        if BlackFlashOn and NEXUS_LV.globalReady("BlackFlashSkill1") then NexusQ(NexusListJob, blackFlashList) end
+        if BlackFlashOn
+            and not (NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple")
+            and NEXUS_LV.globalReady("BlackFlashSkill1") then
+            NexusQ(NexusListJob, blackFlashList)
+        end
         if NEXUS_LV.BlackFlash2On and NEXUS_LV.globalReady("BlackFlashSkill2") then NexusQ(NexusBFJob, "BlackFlashSkill2") end
         if NEXUS_LV.BlackFlash3On and NexusBFExists("BlackFlashSkill3") and NEXUS_LV.globalReady("BlackFlashSkill3") then
             NexusQ(NexusBFJob, "BlackFlashSkill3")
@@ -2310,6 +2315,7 @@ end
  NEXUS_LV.killAuraTarget, NEXUS_LV.killAuraHRP = nil, nil
 CONNS[#CONNS+1] = RunService.Heartbeat:Connect(function(dt)
     if NEXUSG.NexusPlayHubSession ~= SESSION then return end
+    if NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple" then return end
     if not NEXUS_LV.KillOn then return end
     if anyBringActive() then return end
     if NEXUS_LV.essenceBusy or NEXUS_LV.crateBusy then return end
@@ -2331,7 +2337,9 @@ end)
 task.spawn(function()
     while NEXUSG.NexusPlayHubSession == SESSION do
 
-        if NEXUS_LV.KillOn and not (anyBringActive and anyBringActive()) then
+        if NEXUS_NPC_RAID_ON and NEXUS_NPC_RAID_PHASE == "Hollow Purple" then
+            NEXUS_LV.killAuraTarget, NEXUS_LV.killAuraHRP = nil, nil
+        elseif NEXUS_LV.KillOn and not (anyBringActive and anyBringActive()) then
             local n, mm, hrp = NEXUS_LV.getNearest(NEXUS_LV.AURA_RANGE)
             NEXUS_LV.killAuraTarget, NEXUS_LV.killAuraHRP = n, hrp
             if n and hrp then
@@ -17260,24 +17268,22 @@ end }
         return active
     end
 
+    local NEXUS_NPC_RAID_SCAN_CACHE = NEXUS_NPC_RAID_SCAN_CACHE or { t = 0, models = {} }
+
     local function nexusNpcRaidObjectiveModels(boss)
         local out, seen = {}, {}
         local bossRoot = boss and (boss:FindFirstChild("HumanoidRootPart") or boss.PrimaryPart)
         local me = getModel and getModel() or nil
         local myRoot = me and me:FindFirstChild("HumanoidRootPart")
+        local now = os.clock()
 
         local function push(m)
-            if not m or m == boss or seen[m] or not nexusValidNpc(m) then return end
+            if not m or not m.Parent or m == boss or seen[m] or not nexusValidNpc(m) then return end
             if nexusIsPlayerModel(m) or nexusIsPetModel(m) then return end
+
             local root = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
             if not root then return end
-
-            -- Hollow Purple NPCs are not guaranteed to be parented to the same
-            -- island/model tree as the raid boss. Do not reject them using
-            -- onMyIsland() or boss-radius checks.
-            -- Keep the search local to the player's current raid area and
-            -- explicitly exclude the selected boss.
-            if myRoot and (root.Position - myRoot.Position).Magnitude > 250 then return end
+            if myRoot and (root.Position - myRoot.Position).Magnitude > 300 then return end
 
             local text = nexusNpcRaidText(m)
             local bossCfg = NEXUS_NPC_RAID_CFG[NEXUS_NPC_RAID_SELECTED]
@@ -17293,6 +17299,7 @@ end }
             out[#out + 1] = m
         end
 
+        -- Fast paths used by the normal raid NPC layout.
         pcall(function()
             local f = workspace.Characters and workspace.Characters.Server and workspace.Characters.Server.NPCs
             if f then
@@ -17308,6 +17315,33 @@ end }
         pcall(function()
             for _, e in ipairs(sorcLiveAIs()) do push(e.model) end
         end)
+
+        -- Hollow Purple objective NPCs can be created in a temporary container
+        -- that is not under Characters.Server.NPCs / Characters.Client.
+        -- If the fast paths found nothing, scan workspace descendants, but cache
+        -- the expensive pass so this does not run every 0.08s.
+        if #out == 0 and (now - (NEXUS_NPC_RAID_SCAN_CACHE.t or 0)) >= 0.20 then
+            local cache = {}
+            pcall(function()
+                for _, d in ipairs(workspace:GetDescendants()) do
+                    if d:IsA("Model") and d ~= boss then
+                        local hum = d:FindFirstChildOfClass("Humanoid")
+                        local root = d:FindFirstChild("HumanoidRootPart") or d.PrimaryPart
+                        if hum and hum.Health > 0 and root then
+                            cache[#cache + 1] = d
+                        end
+                    end
+                end
+            end)
+            NEXUS_NPC_RAID_SCAN_CACHE.t = now
+            NEXUS_NPC_RAID_SCAN_CACHE.models = cache
+        end
+
+        if #out == 0 then
+            for _, m in ipairs(NEXUS_NPC_RAID_SCAN_CACHE.models or {}) do
+                push(m)
+            end
+        end
 
         table.sort(out, function(a, b)
             local ar = a:FindFirstChild("HumanoidRootPart") or a.PrimaryPart
@@ -17455,6 +17489,7 @@ end }
         NEXUS_NPC_RAID_RETRY_AT = 0
         NEXUS_NPC_RAID_LAST_BOSS = nil
         NEXUS_NPC_RAID_TARGET = nil
+        NEXUS_NPC_RAID_SCAN_CACHE = { t = 0, models = {} }
         NEXUS_NPC_RAID_PHASE = on and "starting" or "idle"
 
         if not NEXUS_NPC_RAID_ON then return end
