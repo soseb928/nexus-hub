@@ -17181,7 +17181,8 @@ end }
             for _, d in ipairs(workspace:GetDescendants()) do
                 if d:IsA("ProximityPrompt") and d.Enabled then
                     local txt = string.lower(tostring(d.ActionText or "") .. " " .. tostring(d.ObjectText or ""))
-                    if string.find(txt, "raid", 1, true) then
+                    if string.find(txt, "raid", 1, true)
+                        or (string.find(txt, "join", 1, true) and string.find(txt, "raid", 1, true)) then
                         local holder = d.Parent
                         local part = holder and (holder:IsA("BasePart") and holder or holder:FindFirstChildWhichIsA("BasePart", true))
                         if part then
@@ -17243,7 +17244,11 @@ end }
             task.wait(0.35)
         end
 
-        return nexusFirePrompt(pr)
+        local fired = nexusFirePrompt(pr)
+        if fired then
+            NEXUS_NPC_RAID_ACTIVE = true
+        end
+        return fired
     end
 
     local function nexusNpcRaidFindBoss()
