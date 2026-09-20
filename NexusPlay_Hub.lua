@@ -17344,6 +17344,7 @@ end }
         NexusQ(pcall, attackList, { boss }, cur, chrp)
         return true
     end
+    end
 
     function NexusSetNpcRaid(on)
         NEXUS_NPC_RAID_ON = on and true or false
