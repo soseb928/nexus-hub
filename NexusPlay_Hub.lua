@@ -8937,7 +8937,7 @@ function nexusRaidEngine(cfg)
         pcall(function()
             NEXUS_LV.CreateIslandQueue:InvokeServer({
 
-                Difficulty = nexusRaidDiff(cfg),
+                Difficulty = (cfg.config == "ZeninElite") and 3 or nexusRaidDiff(cfg),
                 ConfigID = cfg.config,
                 Modifiers = {},
             })
@@ -9316,6 +9316,7 @@ makeIslandRaid("Jogo",   "Jogo",   "Jogo",   "jogo")
 makeIslandRaid("Toji",   "Toji",   "Toji",   "sorcerer killer")
 makeIslandRaid("Sukuna", "Sukuna", "Sukuna", "king of curses")
 makeIslandRaid("AToji",  "AToji",  "AToji",  "awakened toji")
+makeIslandRaid("ZeninElite", "ZeninElite", "ZeninElite", "zen'in elite")
 makeIslandRaid("Maki",   "Maki",   "Maki",   "awakened zen'in")
 makeIslandRaid("AGojo", "AGojo", "AGojo", { "the honored one", "gojo" })
 
@@ -17089,7 +17090,7 @@ end }
     end)
 
     RaidTab:CreateSection("Overlord Raid")
-    NexusRaidNames = { "Star Rage Raid", "Blood Raid", "Lightning God Raid", "Cursed Prodigy Raid", "Deadly Judge Raid", "Jogo Raid", "Sorcerer Killer Raid", "King of Curses Raid", "Awakened Toji Raid", "Maki Raid", "Curse Calamity Raid", "The Honored One Raid" }
+    NexusRaidNames = { "Star Rage Raid", "Blood Raid", "Lightning God Raid", "Cursed Prodigy Raid", "Deadly Judge Raid", "Jogo Raid", "Sorcerer Killer Raid", "King of Curses Raid", "Awakened Toji Raid", "Maki Raid", "Curse Calamity Raid", "The Honored One Raid", "Zen'in Elite Raid" }
     SelectedRaid = S("SelectedRaid", "Star Rage Raid")
     AutoRaidSwitchOn = false
     function nexusApplyRaid()
@@ -17113,6 +17114,7 @@ end }
         elseif r == "Maki Raid" then RaidCfg.active.Maki = true
         elseif r == "Curse Calamity Raid" then AutoCurseCalamityOn = true
         elseif r == "The Honored One Raid" then RaidCfg.active.AGojo = true
+        elseif r == "Zen'in Elite Raid" then RaidCfg.active.ZeninElite = true
         end
     end
     RaidTab:CreateDropdown({
